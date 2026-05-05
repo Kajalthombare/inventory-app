@@ -735,21 +735,21 @@ def build_quotation():
 
 @app.post("/upload_order")
 def upload_order(file: UploadFile = File(...)):
-    df = pd.read_excel(file.file)
 
-    # normalize columns
+    if file.filename.endswith(".csv"):
+        df = pd.read_csv(file.file)
+    else:
+        df = pd.read_excel(file.file, engine="openpyxl")
+
     df.columns = [col.strip().upper() for col in df.columns]
 
     db = SessionLocal()
-
-    # clear old data
     db.execute("DELETE FROM order_items")
 
     for _, row in df.iterrows():
-
         part_no = str(row.get("PART NO", "")).strip()
         if not part_no:
-            continue  # skip empty rows
+            continue
 
         db.execute("""
             INSERT INTO order_items (
