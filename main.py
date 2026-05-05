@@ -554,16 +554,16 @@ async def download_pdf(request: Request):
         for it in items:
             db.execute(text("""
                 INSERT INTO invoice_items 
-                (invoice_id, part_no, description, qty, rate, discount, amount)
-                VALUES (:iid, :p, :d, :q, :r, :disc, :amt)
+                (invoice_id, part_no, description, quantity, rate, amount, hsn)
+                VALUES (:iid, :p, :d, :q, :r, :amt, :hsn)
             """), {
                 "iid": invoice_id,
                 "p": it["part_no"],
                 "d": it["description"],
                 "q": it["qty"],
                 "r": it["rate"],
-                "disc": it["discount"],
-                "amt": it["taxable"]
+                "amt": it["taxable"],
+                "hsn": it["hsn"]
             })
 
         db.commit()
