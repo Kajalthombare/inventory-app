@@ -128,7 +128,13 @@ def format_inr(amount):
 def home(request: Request):
     db = SessionLocal()
 
-    products = db.query(Product).all()
+    products = db.query(Product).order_by(
+        case(
+            (Product.quantity == 0, 0),
+            (Product.quantity < 5, 1),
+            else_=2
+        )
+    ).all()
     total_value = sum(p.amount or 0 for p in products)
 
     db.close()
