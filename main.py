@@ -51,21 +51,10 @@ class OrderItems(Base):
     __tablename__ = "order_items"
 
     id = Column(Integer, primary_key=True)
-
-    sector = Column(String(50))
-    sector_desc = Column(String(255))
-
     part_no = Column(String(100))
     description = Column(String(255))
-
-    alt_part_no = Column(String(100))
-    alt_part_desc = Column(String(255))
-
-    category = Column(String(100))
-    category_desc = Column(String(255))
-
-    mrp = Column(Float)
-    hsn = Column(String(50)) 
+    hsn = Column(String(50))
+    mrp = Column(Float)   
   
 Base.metadata.create_all(bind=engine)
 
@@ -590,13 +579,7 @@ GSTIN: 27AACCT6451F1ZC"""
 
 from fastapi import Query
 from datetime import datetime
-@app.get("/clear_order_items")
-def clear_order_items():
-    db = SessionLocal()
-    db.execute(text("DELETE FROM order_items"))
-    db.commit()
-    db.close()
-    return {"message": "All order_items deleted ✅"}
+
 @app.get("/sales_summary")
 def sales_summary(
     start_date: str = Query(...),
@@ -763,6 +746,7 @@ def upload_order(file: UploadFile = File(...)):
     db = SessionLocal()
 
     db.execute(text("DELETE FROM order_items"))
+
     df = df.fillna("")
 
     for _, row in df.iterrows():
@@ -775,34 +759,17 @@ def upload_order(file: UploadFile = File(...)):
 
         db.execute(text("""
             INSERT INTO order_items (
-                sector, sector_desc,
-                part_no, description,
-                alt_part_no, alt_part_desc,
-                category, category_desc,
-                mrp, hsn
+                part_no, description, mrp, hsn
             ) VALUES (
-                :sector, :sector_desc,
-                :part_no, :description,
-                :alt_part_no, :alt_part_desc,
-                :category, :category_desc,
-                :mrp, :hsn
+                :part_no, :description, :mrp, :hsn
             )
         """), {
-            "sector": row.get("SECTOR", ""),
-            "sector_desc": row.get("SECTOR DESC", ""),
-
             "part_no": part_no,
             "description": row.get("PART DESC", ""),
-
-            "alt_part_no": row.get("ALT.PART NO", ""),
-            "alt_part_desc": row.get("ALT.PART DESC", ""),
-
-            "category": row.get("PRODUCT CATEGORY", ""),
-            "category_desc": row.get("PRODUCT CATEGORY DESC", ""),
-
             "mrp": mrp_val,
             "hsn": row.get("HSN", "")
         })
+
     db.commit()
     db.close()
 
