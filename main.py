@@ -537,7 +537,7 @@ async def download_pdf(request: Request):
         # ✅ STEP 4: SAVE INVOICE
         # ===============================
         invoice_no = generate_invoice_no(db)
-        customer_name = "Walk-in Customer"
+        customer_name = "Thakur Infraprojects Private Limited"
 
         result = db.execute(text("""
             INSERT INTO invoices (

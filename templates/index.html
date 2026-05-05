@@ -638,10 +638,10 @@ async function downloadPDF() {
 
     let html = await res.text();
 
-    let newWindow = window.open();
-    newWindow.document.open();
-    newWindow.document.write(html);
-    newWindow.document.close();
+    // 🔥 MOBILE SAFE
+    document.open();
+    document.write(html);
+    document.close();
 }
 
 let orderRows = [];
