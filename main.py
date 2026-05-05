@@ -531,14 +531,21 @@ async def download_pdf(request: Request):
         invoice_no = generate_invoice_no(db)
 
         result = db.execute(text("""
-            INSERT INTO invoices (invoice_no, customer_name, total, cgst, sgst)
-            VALUES (:inv, :cust, :total, :cgst, :sgst)
+            INSERT INTO invoices (
+                invoice_no, customer_name, date,
+                total_amount, gst_amount, grand_total
+            ) VALUES (
+                :inv, :cust, :date,
+                :total, :gst, :grand
+            )
         """), {
             "inv": invoice_no,
-            "cust": "Thakur Infraprojects Private Limited",
+            "cust": customer_name,
+            "date": datetime.utcnow(),
+
             "total": total,
-            "cgst": cgst,
-            "sgst": sgst
+            "gst": cgst + sgst,
+            "grand": total + cgst + sgst
         })
 
         invoice_id = result.lastrowid
