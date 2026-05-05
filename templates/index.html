@@ -634,13 +634,12 @@ async function downloadPDF() {
         body: JSON.stringify(rows)
     });
 
-    let blob = await res.blob();
-    let url = window.URL.createObjectURL(blob);
+    let html = await res.text();
 
-    let a = document.createElement("a");
-    a.href = url;
-    a.download = "quotation.pdf";
-    a.click();
+    let newWindow = window.open();
+    newWindow.document.open();
+    newWindow.document.write(html);
+    newWindow.document.close();
 }
 
 let orderRows = [];
