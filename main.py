@@ -38,6 +38,34 @@ class Product(Base):
     discount = Column(Float)
     amount = Column(Float)
 
+class Invoice(Base):
+    __tablename__ = "invoices"
+
+    id = Column(Integer, primary_key=True)
+    invoice_no = Column(String(50), unique=True)
+    customer_name = Column(String(255))
+    date = Column(DateTime, default=datetime.utcnow)
+
+    total_amount = Column(Float)
+    gst_amount = Column(Float)
+    grand_total = Column(Float)
+
+class InvoiceItem(Base):
+    __tablename__ = "invoice_items"
+
+    id = Column(Integer, primary_key=True)
+
+    invoice_id = Column(Integer)  # FK (can add relationship later)
+
+    part_no = Column(String(100))
+    description = Column(String(255))
+
+    quantity = Column(Integer)
+    rate = Column(Float)
+    amount = Column(Float)
+
+    hsn = Column(String(50))
+
 # class OrderItems(Base):
 #     __tablename__ = "order_items"
 
