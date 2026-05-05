@@ -595,19 +595,19 @@ Uran Road Uran Naka, Panvel, Raigad
 GSTIN: 27AACCT6451F1ZC"""
     )
 
-    config = pdfkit.configuration(
-        wkhtmltopdf="/usr/local/bin/wkhtmltopdf"
-    )
+    # config = pdfkit.configuration(
+    #     wkhtmltopdf="/usr/local/bin/wkhtmltopdf"
+    # )
 
-    options = {
-        "enable-local-file-access": ""
-    }
+    # options = {
+    #     "enable-local-file-access": ""
+    # }
 
-    pdf_file = "quotation.pdf"
+    # pdf_file = "quotation.pdf"
 
-    pdfkit.from_string(html, pdf_file, configuration=config, options=options)
+    # pdfkit.from_string(html, pdf_file, configuration=config, options=options)
 
-    return FileResponse(pdf_file, media_type="application/pdf", filename="quotation.pdf")
+    # return FileResponse(pdf_file, media_type="application/pdf", filename="quotation.pdf")
     from fastapi.responses import HTMLResponse
 
     return HTMLResponse(content=html)
