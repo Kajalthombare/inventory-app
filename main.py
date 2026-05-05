@@ -197,7 +197,10 @@ def export_excel(start_date: str, end_date: str):
     )
 @app.post("/upload_excel")
 def upload_excel(file: UploadFile = File(...)):
-    df = pd.read_excel(file.file, engine="openpyxl")
+    if file.filename.endswith(".csv"):
+        df = pd.read_csv(file.file)
+    else:
+        df = pd.read_excel(file.file, engine="openpyxl")
     df.columns = [col.strip().upper() for col in df.columns]
 
     db = SessionLocal()
