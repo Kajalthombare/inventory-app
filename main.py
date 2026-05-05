@@ -14,7 +14,6 @@ from openpyxl.styles import Font, Alignment, Border, Side
 
 from fastapi.responses import HTMLResponse
 from database import Base 
-from models import Invoice, InvoiceItem   # ✅ IMPORTANT
 
 from jinja2 import Environment, FileSystemLoader
 # ---------------- PROCESS ORDER ----------------
