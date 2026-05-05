@@ -51,10 +51,11 @@ class OrderItems(Base):
     __tablename__ = "order_items"
 
     id = Column(Integer, primary_key=True)
-    part_no = Column(String)
-    description = Column(String)
+    part_no = Column(String(100))
+    description = Column(String(255))
+    hsn = Column(String(50))
     mrp = Column(Float)   
-    hsn = Column(String)
+  
 Base.metadata.create_all(bind=engine)
 
 def format_inr(amount):
