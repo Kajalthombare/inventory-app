@@ -1,6 +1,6 @@
 from fastapi import FastAPI, Form, Request, UploadFile, File
 from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
-from sqlalchemy import create_engine, Column, Integer, String, Float, DateTime
+from sqlalchemy import create_engine, Column, Integer, String, Float, DateTime, case
 from sqlalchemy.orm import sessionmaker, declarative_base
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import text
@@ -631,11 +631,11 @@ def sales_summary(
     query = text("""
         SELECT 
             COUNT(*) as total_orders,
-            SUM(total) as total_sales,
-            SUM(cgst) as total_cgst,
-            SUM(sgst) as total_sgst
+            SUM(total_amount) as total_sales,
+            SUM(gst_amount) as total_gst,
+            SUM(grand_total) as grand_total
         FROM invoices
-        WHERE DATE(created_at) BETWEEN :start AND :end
+        WHERE DATE(date) BETWEEN :start AND :end
     """)
 
     result = db.execute(query, {
@@ -648,8 +648,8 @@ def sales_summary(
     return {
         "orders": result.total_orders or 0,
         "sales": float(result.total_sales or 0),
-        "cgst": float(result.total_cgst or 0),
-        "sgst": float(result.total_sgst or 0)
+        "gst": float(result.total_gst or 0),
+        "grand_total": float(result.grand_total or 0)
     }
 import_pdf = None
 from import_pdf import extract_products  # assuming your function name
