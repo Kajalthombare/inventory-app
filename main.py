@@ -290,7 +290,7 @@ discount: float = Form(0)
 
     price = db.query(OrderItems).filter(OrderItems.part_no == part_no).first()
     if price:
-        rate = price.rate
+        rate = price.mrp
 
     existing = db.query(Product).filter(Product.part_no == part_no).first()
 
@@ -365,7 +365,7 @@ def process_order(file: UploadFile = File(...)):
             "part_no": part_no,
             "description": price.description if price else "",
             "qty": qty,
-            "rate": price.rate if price else 0,
+            "rate": price.mrp if price else 0,
             "available": stock.quantity if stock else 0,
             "discount": 0
         })
@@ -377,20 +377,13 @@ def get_rate(part_no: str):
     db = SessionLocal()
 
     item = db.execute(
-        text("SELECT * FROM order_items WHERE part_no = :p"),
+        text("SELECT mrp FROM order_items WHERE part_no = :p"),
         {"p": part_no}
     ).fetchone()
 
-    if item and item.mrp:
-        rate = item.mrp
-    else:
-        price = db.query(OrderItems).filter(
-            OrderItems.part_no == part_no
-        ).first()
-        rate = price.rate if price else 0
+    rate = float(item.mrp) if item else 0
 
     db.close()
-
     return {"rate": rate}
 
 # ---------------- DOWNLOAD QUOTATION ----------------
@@ -673,13 +666,13 @@ async def view_quotation(request: Request):
     
         db = SessionLocal()
 
-        for item in data:
-            price = db.query(OrderItems).filter(
-                OrderItems.part_no == item["part_no"]
-            ).first()
+     
+        price = db.query(OrderItems).filter(
+            OrderItems.part_no == item["part_no"]
+        ).first()
 
-            description = price.description if price else ""
-            hsn = price.hsn if price else ""
+        description = price.description if price else ""
+        hsn = price.hsn if price else ""
         
         items.append({
             "part_no": item["part_no"],
@@ -709,10 +702,6 @@ def build_quotation():
     result = []
 
     for r in rows:
-        price = db.query(OrderItems).filter(
-            OrderItems.part_no == r.part_no
-        ).first()
-
         stock = db.query(Product).filter(
             Product.part_no == r.part_no
         ).first()
@@ -720,9 +709,9 @@ def build_quotation():
         result.append({
             "part_no": r.part_no,
             "description": r.description,
-            "rate": price.rate if price else 0,
+            "rate": float(r.mrp),   # ✅ FIX
             "stock": stock.quantity if stock else 0,
-           "qty": stock.quantity if stock else 0,
+            "qty": stock.quantity if stock else 0,
             "discount": 0
         })
 
