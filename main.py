@@ -275,9 +275,12 @@ def add_stock(id: int, qty: int = Form(...)):
     product.quantity += qty
 
     # ✅ Recalculate amount
-    subtotal = product.quantity * product.rate
-    discount_amt = subtotal * (product.discount / 100)
-    product.amount = subtotal - discount_amt
+    # subtotal = product.quantity * product.rate
+    # discount_amt = subtotal * (product.discount / 100)
+    # product.amount = subtotal - discount_amt
+    product.amount = (product.quantity * product.rate) - (
+    (product.quantity * product.rate) * (product.discount / 100)
+)
 
     db.commit()
     db.close()
@@ -306,9 +309,12 @@ def issue_stock(id: int, qty: int = Form(...)):
     product.quantity -= qty
 
     # ✅ Recalculate amount
-    subtotal = product.quantity * product.rate
-    discount_amt = subtotal * (product.discount / 100)
-    product.amount = subtotal - discount_amt
+    # subtotal = product.quantity * product.rate
+    # discount_amt = subtotal * (product.discount / 100)
+    # product.amount = subtotal - discount_amt
+    product.amount = (product.quantity * product.rate) - (
+    (product.quantity * product.rate) * (product.discount / 100)
+)
 
     db.commit()
     db.close()
@@ -328,7 +334,7 @@ discount: float = Form(0)
 
 
     price = db.query(OrderItems).filter(OrderItems.part_no == part_no).first()
-    if price:
+    if price and price.mrp > 0:
         rate = price.mrp
 
     existing = db.query(Product).filter(Product.part_no == part_no).first()
@@ -336,14 +342,17 @@ discount: float = Form(0)
     if existing:
         existing.quantity += quantity
 
-        subtotal = existing.quantity * existing.rate
-        discount_amt = subtotal * (existing.discount / 100)
-        existing.amount = subtotal - discount_amt
+        if rate > 0:
+            existing.rate = rate
+
+        existing.amount = (existing.quantity * existing.rate) - (
+            (existing.quantity * existing.rate) * (existing.discount / 100)
+        )
     else:
 
-        subtotal = quantity * rate
-        discount_amt = subtotal * (discount / 100)
-        amount = subtotal - discount_amt
+        amount = (quantity * rate) - (
+            (quantity * rate) * (discount / 100)
+        )
         db.add(Product(
             part_no=part_no,
             description=description,
