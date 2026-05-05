@@ -106,7 +106,7 @@ def home(request: Request):
 
     return templates.TemplateResponse(
         "index.html",
-        {
+        context={   # ✅ THIS FIXES YOUR ERROR
             "request": request,
             "products": products,
             "total_value": round(total_value, 2)
