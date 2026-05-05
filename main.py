@@ -744,7 +744,9 @@ def upload_order(file: UploadFile = File(...)):
     df.columns = [col.strip().upper() for col in df.columns]
 
     db = SessionLocal()
-    db.execute("DELETE FROM order_items")
+    from sqlalchemy import text
+
+    db.execute(text("DELETE FROM order_items"))
 
     for _, row in df.iterrows():
         part_no = str(row.get("PART NO", "")).strip()
