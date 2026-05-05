@@ -100,14 +100,13 @@ def home(request: Request):
     db = SessionLocal()
 
     products = db.query(Product).all()
-
     total_value = sum(p.amount or 0 for p in products)
 
     db.close()
 
     return templates.TemplateResponse(
-        "index.html",
-        {
+        name="index.html",   # ✅ IMPORTANT (use name=)
+        context={
             "request": request,
             "products": products,
             "total_value": round(total_value, 2)
