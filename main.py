@@ -96,26 +96,22 @@ def format_inr(amount):
 #         }
 #     )
 
-@app.get("/")
-def home():
-    return {"status": "working"}
-# @app.get("/")
-# def home(request: Request):
-#     db = SessionLocal()
+@app.get("/", response_class=HTMLResponse)
+def home(request: Request):
+    db = SessionLocal()
 
-#     products = db.query(Product).all()
-#     total_value = sum(p.amount or 0 for p in products)
+    products = db.query(Product).all()
+    total_value = sum(p.amount or 0 for p in products)
 
-#     db.close()
+    db.close()
 
-#     return templates.TemplateResponse(
-#         "index.html",   # ✅ FIRST argument MUST be template name
-#         {
-#             "request": request,
-#             "products": products,
-#             "total_value": round(total_value, 2)
-#         }
-#     )
+    html = templates.get_template("index.html").render(
+        request=request,
+        products=products,
+        total_value=round(total_value, 2)
+    )
+
+    return HTMLResponse(content=html)
 # ---------------- PRICE MASTER UPLOAD ----------------
 
 
