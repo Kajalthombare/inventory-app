@@ -20,19 +20,9 @@ from jinja2 import Environment, FileSystemLoader
 
 app = FastAPI()
 templates = Jinja2Templates(directory="templates")
+from database import Base, engine
 
-import os
-
-DATABASE_URL = os.getenv("DATABASE_URL") or os.getenv("MYSQL_URL")
-
-if not DATABASE_URL:
-    raise ValueError("Database URL not found!")
-
-engine = create_engine(DATABASE_URL, pool_pre_ping=True)
-
-Base.metadata.create_all(bind=engine)   # ✅ THIS WILL WORK NOW
-
-SessionLocal = sessionmaker(bind=engine)
+Base.metadata.create_all(bind=engine)
 
 # ---------------- MODELS ----------------
 
