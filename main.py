@@ -74,28 +74,45 @@ def format_inr(amount):
 
 # ---------------- HOME ----------------
 
-@app.get("/", response_class=HTMLResponse)
+# @app.get("/", response_class=HTMLResponse)
+# def home(request: Request):
+#     db = SessionLocal()
+#     products = db.query(Product).all()
+
+#     products = sorted(products, key=lambda x: x.quantity > 0)
+
+#     # 🔥 ADD THIS
+#     total_value = sum([(p.amount or 0) for p in products])
+#     formatted_total = format_inr(total_value)
+
+#     db.close()
+
+#     return templates.TemplateResponse(
+#         "index.html",
+#         context={
+#             "request": request,
+#             "products": products,
+#             "total_value": round(total_value, 2)
+#         }
+#     )
+@app.get("/")
 def home(request: Request):
     db = SessionLocal()
+
     products = db.query(Product).all()
 
-    products = sorted(products, key=lambda x: x.quantity > 0)
-
-    # 🔥 ADD THIS
-    total_value = sum([(p.amount or 0) for p in products])
-    formatted_total = format_inr(total_value)
+    total_value = sum(p.amount or 0 for p in products)
 
     db.close()
 
     return templates.TemplateResponse(
         "index.html",
-        context={
+        {
             "request": request,
             "products": products,
             "total_value": round(total_value, 2)
         }
     )
-
 # ---------------- PRICE MASTER UPLOAD ----------------
 
 
