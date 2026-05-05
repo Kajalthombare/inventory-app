@@ -308,17 +308,20 @@ discount: float = Form(0)
 @app.get("/get_price/{part_no}")
 def get_price(part_no: str):
     db = SessionLocal()
-    price = db.query(OrderItems).filter(OrderItems.part_no == part_no).first()
+
+    price = db.query(OrderItems).filter(
+        OrderItems.part_no == part_no
+    ).first()
+
     db.close()
 
- 
     if not price:
-        return {"error": "Not found"}
+        return {"rate": 0, "hsn": "", "description": ""}
 
     return {
-        "description": price.description,
-        "rate": price.rate,
-        "hsn": price.hsn
+        "rate": price.mrp,   # ✅ FIXED
+        "hsn": price.hsn,
+        "description": price.description
     }
 
 
