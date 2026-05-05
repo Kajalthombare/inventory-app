@@ -51,10 +51,21 @@ class OrderItems(Base):
     __tablename__ = "order_items"
 
     id = Column(Integer, primary_key=True)
+
+    sector = Column(String(50))
+    sector_desc = Column(String(255))
+
     part_no = Column(String(100))
     description = Column(String(255))
-    hsn = Column(String(50))
-    mrp = Column(Float)   
+
+    alt_part_no = Column(String(100))
+    alt_part_desc = Column(String(255))
+
+    category = Column(String(100))
+    category_desc = Column(String(255))
+
+    mrp = Column(Float)
+    hsn = Column(String(50)) 
   
 Base.metadata.create_all(bind=engine)
 
@@ -758,13 +769,31 @@ def upload_order(file: UploadFile = File(...)):
 
         db.execute(text("""
             INSERT INTO order_items (
-                part_no, description, mrp, hsn
+                sector, sector_desc,
+                part_no, description,
+                alt_part_no, alt_part_desc,
+                category, category_desc,
+                mrp, hsn
             ) VALUES (
-                :part_no, :description, :mrp, :hsn
+                :sector, :sector_desc,
+                :part_no, :description,
+                :alt_part_no, :alt_part_desc,
+                :category, :category_desc,
+                :mrp, :hsn
             )
         """), {
+            "sector": row.get("SECTOR", ""),
+            "sector_desc": row.get("SECTOR DESC", ""),
+
             "part_no": part_no,
             "description": row.get("PART DESC", ""),
+
+            "alt_part_no": row.get("ALT.PART NO", ""),
+            "alt_part_desc": row.get("ALT.PART DESC", ""),
+
+            "category": row.get("PRODUCT CATEGORY", ""),
+            "category_desc": row.get("PRODUCT CATEGORY DESC", ""),
+
             "mrp": mrp_val,
             "hsn": row.get("HSN", "")
         })
