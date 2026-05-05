@@ -608,7 +608,9 @@ GSTIN: 27AACCT6451F1ZC"""
     pdfkit.from_string(html, pdf_file, configuration=config, options=options)
 
     return FileResponse(pdf_file, media_type="application/pdf", filename="quotation.pdf")
-    #return {"message": "PDF generation disabled on server"}
+    from fastapi.responses import HTMLResponse
+
+        return HTMLResponse(content=html)
 
 from fastapi import Query
 from datetime import datetime
