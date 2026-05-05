@@ -343,7 +343,19 @@ def get_price(part_no: str):
     }
 
 
-
+@app.get("/upload_page", response_class=HTMLResponse)
+def upload_page():
+    return """
+    <html>
+    <body>
+        <h2>Upload Order Excel</h2>
+        <form action="/upload_order" method="post" enctype="multipart/form-data">
+            <input type="file" name="file" />
+            <button type="submit">Upload</button>
+        </form>
+    </body>
+    </html>
+    """
 
 @app.post("/process_order")
 def process_order(file: UploadFile = File(...)):
@@ -732,34 +744,19 @@ def upload_order(file: UploadFile = File(...)):
 
     for _, row in df.iterrows():
 
+        part_no = str(row.get("PART NO", "")).strip()
+        if not part_no:
+            continue  # skip empty rows
+
         db.execute("""
             INSERT INTO order_items (
-                sector, sector_desc,
-                part_no, description,
-                alt_part_no, alt_part_desc,
-                category, category_desc,
-                mrp, hsn
+                part_no, description, mrp, hsn
             ) VALUES (
-                :sector, :sector_desc,
-                :part_no, :description,
-                :alt_part_no, :alt_part_desc,
-                :category, :category_desc,
-                :mrp, :hsn
+                :part_no, :description, :mrp, :hsn
             )
         """, {
-
-            "sector": row.get("SECTOR", ""),
-            "sector_desc": row.get("SECTOR DESC", ""),
-
-            "part_no": row.get("PART NO", ""),
+            "part_no": part_no,
             "description": row.get("PART DESC", ""),
-
-            "alt_part_no": row.get("ALT.PART NO", ""),
-            "alt_part_desc": row.get("ALT.PART DESC", ""),
-
-            "category": row.get("PRODUCT CATEGORY", ""),
-            "category_desc": row.get("PRODUCT CATEGORY DESC", ""),
-
             "mrp": float(str(row.get("MRP", 0)).replace(",", "")),
             "hsn": row.get("HSN", "")
         })
@@ -768,7 +765,6 @@ def upload_order(file: UploadFile = File(...)):
     db.close()
 
     return {"message": "Full order data saved ✅"}
-
 @app.get("/get_order_items")
 def get_order_items():
     db = SessionLocal()
