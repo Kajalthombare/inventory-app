@@ -23,8 +23,10 @@ templates = Jinja2Templates(directory="templates")
 DATABASE_URL = "mysql+pymysql://root:1234@localhost/inventory"
 
 engine = create_engine(DATABASE_URL)
+
+Base.metadata.create_all(bind=engine)   # ✅ ADD THIS
+
 SessionLocal = sessionmaker(bind=engine)
-Base = declarative_base()
 
 # ---------------- MODELS ----------------
 
