@@ -159,9 +159,15 @@ def export_excel(start_date: str, end_date: str):
     db = SessionLocal()
 
     query = text("""
-        SELECT invoice_no, customer_name, total, cgst, sgst, created_at
+        SELECT 
+            invoice_no,
+            customer_name,
+            total_amount,
+            gst_amount,
+            grand_total,
+            date
         FROM invoices
-        WHERE DATE(created_at) BETWEEN :start AND :end
+        WHERE DATE(date) BETWEEN :start AND :end
     """)
 
     result = db.execute(query, {
@@ -171,47 +177,43 @@ def export_excel(start_date: str, end_date: str):
 
     db.close()
 
-    # -------------------------
-    # DATAFRAME (Sales Data)
-    # -------------------------
     df = pd.DataFrame(result, columns=[
-        "Invoice No", "Customer", "Total", "CGST", "SGST", "Date"
+        "Invoice No", "Customer", "Total", "GST", "Grand Total", "Date"
     ])
 
-    # -------------------------
-    # SUMMARY CALCULATION
-    # -------------------------
+    df["CGST"] = df["GST"] / 2
+    df["SGST"] = df["GST"] / 2
+
     total_orders = len(df)
     total_sales = df["Total"].sum()
     total_cgst = df["CGST"].sum()
     total_sgst = df["SGST"].sum()
-    grand_total = total_sales + total_cgst + total_sgst
-    # ✅ ADD TOTAL ROW BEFORE EXPORT
-    df.loc[len(df)] = [
-        "",
-        "GRAND TOTAL",
-        grand_total,
-        "",
-        "",
-        ""
-    ]
+    grand_total = df["Grand Total"].sum()
 
     summary_df = pd.DataFrame({
-    "Metric": [
-        "Total Orders",
-        "Total Sales (Before GST)",
-        "Total CGST",
-        "Total SGST",
-        "Grand Total (With GST)"
-    ],
-    "Value": [
-        total_orders,
-        total_sales,
-        total_cgst,
-        total_sgst,
-        grand_total
-    ]
-})
+        "Metric": [
+            "Total Orders",
+            "Total Sales",
+            "Total CGST",
+            "Total SGST",
+            "Grand Total"
+        ],
+        "Value": [
+            total_orders,
+            total_sales,
+            total_cgst,
+            total_sgst,
+            grand_total
+        ]
+    })
+
+    file_path = "/tmp/sales.xlsx"
+
+    with pd.ExcelWriter(file_path, engine='openpyxl') as writer:
+        df.to_excel(writer, sheet_name="Sales Data", index=False)
+        summary_df.to_excel(writer, sheet_name="Summary", index=False)
+
+    return FileResponse(file_path, filename="sales.xlsx")
 
     # -------------------------
     # WRITE TO EXCEL

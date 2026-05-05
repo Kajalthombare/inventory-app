@@ -433,10 +433,12 @@ async function getSales() {
     document.getElementById("total_orders").innerText = data.orders;
     document.getElementById("total_sales").innerText =
         new Intl.NumberFormat('en-IN').format(data.sales);
+    let gst = data.gst || 0;
     document.getElementById("total_cgst").innerText =
-        new Intl.NumberFormat('en-IN').format(data.cgst);
+        new Intl.NumberFormat('en-IN').format(gst / 2);
+
     document.getElementById("total_sgst").innerText =
-        new Intl.NumberFormat('en-IN').format(data.sgst);
+        new Intl.NumberFormat('en-IN').format(gst / 2);
 }
 
 window.onload = () => {
