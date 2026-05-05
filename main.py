@@ -105,8 +105,8 @@ def home(request: Request):
     db.close()
 
     return templates.TemplateResponse(
-        name="index.html",   # ✅ IMPORTANT (use name=)
-        context={
+        "index.html",
+        {
             "request": request,
             "products": products,
             "total_value": round(total_value, 2)
@@ -211,7 +211,7 @@ def upload_excel(file: UploadFile = File(...)):
         db.add(OrderItems(
             part_no=part_no,
             description=row.get("PART DESC", ""),
-            rate=float(str(row.get("MRP", 0)).replace(",", "")),
+            mrp=float(str(row.get("MRP", 0)).replace(",", "")),  # ✅ FIX
             hsn=row.get("HSN", "")
         ))
 
@@ -397,18 +397,6 @@ def get_rate(part_no: str):
 from datetime import datetime
 from sqlalchemy import text
 
-def generate_invoice_no(db):
-    today = datetime.now()
-    prefix = today.strftime("%Y-%m")   # e.g. 2026-05
-
-    count = db.execute(
-        text("SELECT COUNT(*) FROM invoices WHERE invoice_no LIKE :p"),
-        {"p": f"{prefix}%"}
-    ).scalar()
-
-    return f"{prefix}-{str(count + 1).zfill(3)}"
-from datetime import datetime
-from sqlalchemy import text
 
 def generate_invoice_no(db):
     today = datetime.now()
@@ -576,9 +564,10 @@ GSTIN: 27AACCT6451F1ZC"""
 
     pdf_file = "quotation.pdf"
 
-    pdfkit.from_string(html, pdf_file, configuration=config, options=options)
+    #pdfkit.from_string(html, pdf_file, configuration=config, options=options)
 
-    return FileResponse(pdf_file, media_type="application/pdf", filename="quotation.pdf")
+    #return FileResponse(pdf_file, media_type="application/pdf", filename="quotation.pdf")
+    return {"message": "PDF generation disabled on server"}
 
 from fastapi import Query
 from datetime import datetime
