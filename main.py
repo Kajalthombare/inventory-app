@@ -590,7 +590,13 @@ GSTIN: 27AACCT6451F1ZC"""
 
 from fastapi import Query
 from datetime import datetime
-
+@app.get("/clear_order_items")
+def clear_order_items():
+    db = SessionLocal()
+    db.execute(text("DELETE FROM order_items"))
+    db.commit()
+    db.close()
+    return {"message": "All order_items deleted ✅"}
 @app.get("/sales_summary")
 def sales_summary(
     start_date: str = Query(...),
