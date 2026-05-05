@@ -95,6 +95,10 @@ def format_inr(amount):
 #             "total_value": round(total_value, 2)
 #         }
 #     )
+
+@app.get("/")
+def home():
+    return {"status": "working"}
 @app.get("/")
 def home(request: Request):
     db = SessionLocal()
