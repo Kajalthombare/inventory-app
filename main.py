@@ -87,11 +87,14 @@ def home(request: Request):
 
     db.close()
 
-    return templates.TemplateResponse("index.html", {
-        "request": request,
-        "products": products,
-        "total_value": round(total_value, 2)
-    })
+    return templates.TemplateResponse(
+        "index.html",
+        context={
+            "request": request,
+            "products": products,
+            "total_value": round(total_value, 2)
+        }
+    )
 
 # ---------------- PRICE MASTER UPLOAD ----------------
 
