@@ -440,14 +440,11 @@ def generate_invoice_no(db):
     year_month = today.strftime("%Y-%m")   # 2026-05
 
     # Count how many invoices already exist this month
-    count = db.execute(
-        text("""
-            SELECT COUNT(*) 
-            FROM invoices 
-            WHERE DATE_FORMAT(created_at, '%Y-%m') = :ym
-        """),
-        {"ym": year_month}
-    ).scalar()
+    count = db.execute(text("""
+        SELECT COUNT(*) 
+        FROM invoices 
+        WHERE DATE_FORMAT(date, '%Y-%m') = :ym
+    """), {"ym": year_month}).scalar()
 
     serial = str(count + 1).zfill(3)   # 001, 002, 003
 
