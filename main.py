@@ -13,6 +13,7 @@ from openpyxl import Workbook
 from openpyxl.styles import Font, Alignment, Border, Side
 
 from fastapi.responses import HTMLResponse
+from database import Base 
 
 from jinja2 import Environment, FileSystemLoader
 # ---------------- PROCESS ORDER ----------------
@@ -24,7 +25,7 @@ DATABASE_URL = "mysql+pymysql://root:1234@localhost/inventory"
 
 engine = create_engine(DATABASE_URL)
 
-Base.metadata.create_all(bind=engine)   # ✅ ADD THIS
+Base.metadata.create_all(bind=engine)   # ✅ THIS WILL WORK NOW
 
 SessionLocal = sessionmaker(bind=engine)
 
