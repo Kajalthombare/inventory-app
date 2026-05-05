@@ -105,8 +105,8 @@ def home(request: Request):
     db.close()
 
     return templates.TemplateResponse(
-        "index.html",
-        context={   # ✅ THIS FIXES YOUR ERROR
+        "index.html",   # ✅ FIRST argument MUST be template name
+        {
             "request": request,
             "products": products,
             "total_value": round(total_value, 2)
