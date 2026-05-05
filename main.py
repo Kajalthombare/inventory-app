@@ -603,10 +603,8 @@ def sales_summary(
         "sgst": float(result.total_sgst or 0)
     }
 import_pdf = None
-try:
-    from import_pdf import extract_products  # assuming your function name
-except:
-    pass
+from import_pdf import extract_products  # assuming your function name
+
 
 
 @app.get("/import_pdf_data")
