@@ -274,13 +274,12 @@ def add_stock(id: int, qty: int = Form(...)):
     # ✅ Add stock
     product.quantity += qty
 
-    # ✅ Recalculate amount
-    # subtotal = product.quantity * product.rate
-    # discount_amt = subtotal * (product.discount / 100)
-    # product.amount = subtotal - discount_amt
-    product.amount = (product.quantity * product.rate) - (
-    (product.quantity * product.rate) * (product.discount / 100)
-)
+    if product.quantity <= 0:
+        product.amount = 0
+    else:
+        product.amount = (product.quantity * product.rate) - (
+            (product.quantity * product.rate) * (product.discount / 100)
+        )
 
     db.commit()
     db.close()
@@ -301,9 +300,17 @@ def issue_stock(id: int, qty: int = Form(...)):
         db.close()
         return {"error": "Not enough stock"}
     
+    # Reduce stock
+    product.quantity -= qty
+
+    # Prevent negative
     if product.quantity <= 0:
         product.quantity = 0
-        product.amount = 0 
+        product.amount = 0
+    else:
+        product.amount = (product.quantity * product.rate) - (
+            (product.quantity * product.rate) * (product.discount / 100)
+        )
 
     # ✅ Reduce stock
     product.quantity -= qty
@@ -342,12 +349,12 @@ discount: float = Form(0)
     if existing:
         existing.quantity += quantity
 
-        if rate > 0:
-            existing.rate = rate
-
-        existing.amount = (existing.quantity * existing.rate) - (
-            (existing.quantity * existing.rate) * (existing.discount / 100)
-        )
+        if existing.quantity <= 0:
+            existing.amount = 0
+        else:
+            existing.amount = (existing.quantity * existing.rate) - (
+                (existing.quantity * existing.rate) * (existing.discount / 100)
+            )
     else:
 
         amount = (quantity * rate) - (
