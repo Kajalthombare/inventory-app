@@ -529,6 +529,7 @@ async def download_pdf(request: Request):
         # ✅ STEP 4: SAVE INVOICE
         # ===============================
         invoice_no = generate_invoice_no(db)
+        customer_name = "Walk-in Customer"
 
         result = db.execute(text("""
             INSERT INTO invoices (
@@ -604,10 +605,10 @@ GSTIN: 27AACCT6451F1ZC"""
 
     pdf_file = "quotation.pdf"
 
-    #pdfkit.from_string(html, pdf_file, configuration=config, options=options)
+    pdfkit.from_string(html, pdf_file, configuration=config, options=options)
 
-    #return FileResponse(pdf_file, media_type="application/pdf", filename="quotation.pdf")
-    return {"message": "PDF generation disabled on server"}
+    return FileResponse(pdf_file, media_type="application/pdf", filename="quotation.pdf")
+    #return {"message": "PDF generation disabled on server"}
 
 from fastapi import Query
 from datetime import datetime
