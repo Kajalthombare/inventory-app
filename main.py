@@ -83,6 +83,7 @@ class OrderItems(Base):
     description = Column(String(255))
     hsn = Column(String(50))
     mrp = Column(Float)   
+    quantity = Column(Float)
   
 Base.metadata.create_all(bind=engine)
 
@@ -490,7 +491,7 @@ async def download_pdf(request: Request):
         for row in data:
 
             db_item = db.execute(
-                text("SELECT description, mrp, hsn FROM order_items WHERE part_no=:p"),
+                text("SELECT description, mrp, hsn, quantity FROM order_items WHERE part_no=:p"),
                 {"p": row["part_no"]}
             ).fetchone()
 
@@ -799,18 +800,21 @@ def upload_order(file: UploadFile = File(...)):
             continue
 
         mrp_val = float(str(row.get("MRP", 0)).replace(",", "") or 0)
+        quantity_val = int(float(str(row.get("QUANTITY", 0)) or 0))
+
 
         db.execute(text("""
             INSERT INTO order_items (
-                part_no, description, mrp, hsn
+                part_no, description, mrp, hsn, quantity
             ) VALUES (
-                :part_no, :description, :mrp, :hsn
+                :part_no, :description, :mrp, :hsn, quantity
             )
         """), {
             "part_no": part_no,
             "description": row.get("PART DESC", ""),
             "mrp": mrp_val,
-            "hsn": row.get("HSN", "")
+            "hsn": row.get("HSN", ""),
+            "quantity" : quantity_val
         })
 
     db.commit()
