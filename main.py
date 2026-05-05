@@ -733,12 +733,9 @@ def build_quotation():
     db.close()
     return result
 
-from sqlalchemy import text
-
 @app.post("/upload_order")
 def upload_order(file: UploadFile = File(...)):
 
-    # detect file type
     if file.filename.endswith(".csv"):
         df = pd.read_csv(file.file)
     else:
@@ -748,14 +745,16 @@ def upload_order(file: UploadFile = File(...)):
 
     db = SessionLocal()
 
-    # clear old
     db.execute(text("DELETE FROM order_items"))
+    df = df.fillna("")
 
     for _, row in df.iterrows():
-        part_no = str(row.get("PART NO", "")).strip()
 
+        part_no = str(row.get("PART NO", "")).strip()
         if not part_no:
             continue
+
+        mrp_val = float(str(row.get("MRP", 0)).replace(",", "") or 0)
 
         db.execute(text("""
             INSERT INTO order_items (
@@ -766,10 +765,9 @@ def upload_order(file: UploadFile = File(...)):
         """), {
             "part_no": part_no,
             "description": row.get("PART DESC", ""),
-            "mrp": float(str(row.get("MRP", 0)).replace(",", "")),
+            "mrp": mrp_val,
             "hsn": row.get("HSN", "")
         })
-
     db.commit()
     db.close()
 
