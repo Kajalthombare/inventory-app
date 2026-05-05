@@ -602,7 +602,36 @@ def sales_summary(
         "cgst": float(result.total_cgst or 0),
         "sgst": float(result.total_sgst or 0)
     }
+import_pdf = None
+try:
+    from import_pdf import extract_products  # assuming your function name
+except:
+    pass
 
+
+@app.get("/import_pdf_data")
+def import_pdf_data():
+    db = SessionLocal()
+
+    # 🔥 call your existing function
+    products = extract_products("products.pdf")  
+
+    for p in products:
+        db.add(Product(
+            part_no=p.get("part_no"),
+            description=p.get("description"),
+            hsn=p.get("hsn"),
+            gst=float(p.get("gst", 18)),
+            quantity=int(p.get("qty", 0)),
+            rate=float(p.get("rate", 0)),
+            discount=float(p.get("discount", 0)),
+            amount=float(p.get("amount", 0))
+        ))
+
+    db.commit()
+    db.close()
+
+    return {"message": "PDF imported successfully"}
 @app.get("/sales")
 def get_sales(start: str, end: str):
     db = SessionLocal()

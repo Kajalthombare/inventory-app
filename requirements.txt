@@ -8,3 +8,4 @@ pandas
 openpyxl
 python-multipart
 pdfkit
+pdfplumber
