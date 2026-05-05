@@ -610,7 +610,7 @@ GSTIN: 27AACCT6451F1ZC"""
     return FileResponse(pdf_file, media_type="application/pdf", filename="quotation.pdf")
     from fastapi.responses import HTMLResponse
 
-        return HTMLResponse(content=html)
+    return HTMLResponse(content=html)
 
 from fastapi import Query
 from datetime import datetime
