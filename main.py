@@ -20,7 +20,7 @@ from jinja2 import Environment, FileSystemLoader
 
 app = FastAPI()
 templates = Jinja2Templates(directory="templates")
-from database import Base, engine
+from database import Base, engine, SessionLocal
 
 Base.metadata.create_all(bind=engine)
 
