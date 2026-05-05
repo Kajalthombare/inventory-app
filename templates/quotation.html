@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+
+<html>
+<head>
+    <title>Quotation</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+
+```
+<style>
+    body {
+        font-size: 14px;
+        background: #f5f5f5;
+    }
+
+    .invoice-box {
+        max-width: 900px;
+        margin: auto;
+        padding: 25px;
+        border: 1px solid #ddd;
+        background: #fff;
+    }
+
+    .header-title {
+        text-align: center;
+        font-size: 22px;
+        font-weight: bold;
+        margin-bottom: 20px;
+    }
+
+    .company {
+        font-weight: bold;
+        font-size: 16px;
+    }
+
+    .table th {
+        background-color: #000;
+        color: #fff;
+        text-align: center;
+    }
+
+    .table td {
+        vertical-align: middle;
+    }
+
+    .total-box {
+        text-align: right;
+        margin-top: 20px;
+        font-size: 16px;
+    }
+
+    .total-box b {
+        font-size: 18px;
+    }
+</style>
+```
+
+</head>
+
+<body>
+
+<div class="invoice-box">
+
+```
+<!-- TITLE -->
+<div class="header-title">QUOTATION</div>
+
+<!-- HEADER -->
+<div class="row mb-3">
+
+    <div class="col-7">
+        <div class="company">MAHINDRA PRO SPARES</div>
+        Panvel, Maharashtra<br>
+        GSTIN: 27XXXXXXXXX
+    </div>
+
+    <div class="col-5 text-end">
+        <b>Quotation No:</b> Q-001<br>
+        <b>Date:</b> {{ date }}
+    </div>
+
+</div>
+
+<!-- BUYER -->
+<div class="mb-3">
+    <b>Buyer (Bill To)</b><br>
+    <b>{{ buyer_name }}</b><br>
+    {{ buyer_address }}
+</div>
+
+<!-- TABLE -->
+<table class="table table-bordered">
+    <thead>
+        <tr>
+            <th>Sl No</th>
+            <th>Description</th>
+            <th>HSN</th>
+            <th>GST %</th>
+            <th>Qty</th>
+            <th>Rate</th>
+            <th>Disc %</th>
+            <th>Amount</th>
+        </tr>
+    </thead>
+
+    <tbody>
+    {% for item in items %}
+        <tr>
+            <td>{{ loop.index }}</td>
+
+            <td>
+                <b>{{ item.part_no }}</b><br>
+                {{ item.description }}
+            </td>
+
+            <td>{{ item.hsn }}</td>
+            <td>18%</td>
+            <td>{{ item.qty }}</td>
+            <td>{{ item.rate }}</td>
+            <td>{{ item.discount }}</td>
+            <td><b>{{ item.final }}</b></td>
+        </tr>
+    {% endfor %}
+    </tbody>
+</table>
+
+<!-- TOTAL -->
+<div class="total-box">
+    <b>Grand Total: ₹ {{ total }}</b>
+</div>
+```
+
+</div>
+
+</body>
+</html>
