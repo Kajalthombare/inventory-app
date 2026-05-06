@@ -299,11 +299,11 @@ def issue_stock(id: int, qty: int = Form(...)):
     if product.quantity < qty:
         db.close()
         return {"error": "Not enough stock"}
-    
-    # Reduce stock
+
+    # ✅ STEP 1: Reduce stock
     product.quantity -= qty
 
-    # Prevent negative
+    # ✅ STEP 2: Recalculate amount
     if product.quantity <= 0:
         product.quantity = 0
         product.amount = 0
@@ -312,9 +312,10 @@ def issue_stock(id: int, qty: int = Form(...)):
             (product.quantity * product.rate) * (product.discount / 100)
         )
 
-    db.add(product)
+    # ✅ STEP 3: Save changes
     db.commit()
     db.refresh(product)
+    db.close()
 
     return RedirectResponse("/", status_code=303)
 @app.post("/add")
