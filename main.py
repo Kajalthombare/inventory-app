@@ -135,7 +135,11 @@ def home(request: Request):
             else_=2
         )
     ).all()
-    total_value = sum(p.amount or 0 for p in products)
+    total_value = sum(
+    (p.quantity * p.rate) - ((p.quantity * p.rate) * (p.discount / 100))
+    if p.quantity > 0 else 0
+    for p in products
+)
 
     db.close()
 
@@ -528,6 +532,14 @@ async def download_pdf(request: Request):
 
             if product:
                 product.quantity -= qty
+
+                if product.quantity <= 0:
+                    product.quantity = 0
+                    product.amount = 0
+                else:
+                    product.amount = (product.quantity * product.rate) - (
+                        (product.quantity * product.rate) * (product.discount / 100)
+        )
 
             # 🔥 CALCULATIONS
             base = qty * rate
