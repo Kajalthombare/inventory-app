@@ -312,33 +312,22 @@ def issue_stock(id: int, qty: int = Form(...)):
             (product.quantity * product.rate) * (product.discount / 100)
         )
 
-    # ✅ Reduce stock
-    product.quantity -= qty
-
-    # ✅ Recalculate amount
-    # subtotal = product.quantity * product.rate
-    # discount_amt = subtotal * (product.discount / 100)
-    # product.amount = subtotal - discount_amt
-    product.amount = (product.quantity * product.rate) - (
-    (product.quantity * product.rate) * (product.discount / 100)
-)
-
+    db.add(product)
     db.commit()
-    db.close()
+    db.refresh(product)
 
     return RedirectResponse("/", status_code=303)
 @app.post("/add")
 def add_product(
-part_no: str = Form(...),
-description: str = Form(...),
-hsn: str = Form(...),
-gst: float = Form(...),
-quantity: int = Form(...),
-rate: float = Form(...),
-discount: float = Form(0)
+    part_no: str = Form(...),
+    description: str = Form(...),
+    hsn: str = Form(...),
+    gst: float = Form(...),
+    quantity: int = Form(...),
+    rate: float = Form(...),
+    discount: float = Form(0)
 ):
     db = SessionLocal()
-
 
     price = db.query(OrderItems).filter(OrderItems.part_no == part_no).first()
     if price and price.mrp > 0:
@@ -349,18 +338,29 @@ discount: float = Form(0)
     if existing:
         existing.quantity += quantity
 
+        # ✅ update rate if valid
+        if rate > 0:
+            existing.rate = rate
+
+        # ✅ calculate amount
         if existing.quantity <= 0:
+            existing.quantity = 0
             existing.amount = 0
         else:
             existing.amount = (existing.quantity * existing.rate) - (
                 (existing.quantity * existing.rate) * (existing.discount / 100)
             )
-    else:
 
-        amount = (quantity * rate) - (
-            (quantity * rate) * (discount / 100)
-        )
-        db.add(Product(
+    else:
+        # ✅ new product
+        if quantity <= 0:
+            amount = 0
+        else:
+            amount = (quantity * rate) - (
+                (quantity * rate) * (discount / 100)
+            )
+
+        new_product = Product(
             part_no=part_no,
             description=description,
             hsn=hsn,
@@ -369,8 +369,11 @@ discount: float = Form(0)
             rate=rate,
             discount=discount,
             amount=amount
-        ))
+        )
 
+        db.add(new_product)
+
+    # ✅ SINGLE COMMIT (VERY IMPORTANT)
     db.commit()
     db.close()
 

@@ -273,7 +273,7 @@
                     <td>
                         <div class="d-flex justify-content-center gap-2">
 
-                            <form action="/issue/{{p.id}}" method="post" class="d-flex">
+                            <form action="/issue/{{p.id}}" method="post" onsubmit="return reloadPage()"class="d-flex">
                                 <input name="qty" type="number" min="1" max="{{p.quantity}}" required 
                                     class="form-control form-control-sm me-1" style="width:70px;"
                                     {% if p.quantity == 0 %}disabled{% endif %}>
@@ -282,7 +282,7 @@
                                         {% if p.quantity == 0 %}disabled{% endif %}>-</button>
                             </form>
 
-                            <form action="/add_stock/{{p.id}}" method="post" class="d-flex">
+                            <form action="/add_stock/{{p.id}}" method="post" onsubmit="return reloadPage()" class="d-flex">
                                 <input name="qty" type="number" min="1" required class="form-control form-control-sm me-1" style="width:70px;">
                                 <button class="btn btn-success btn-sm">+</button>
                             </form>
@@ -692,6 +692,21 @@ function renderOrder() {
     });
 
     document.getElementById("orderBody").innerHTML = html;
+}
+async function issueStock(id, qty) {
+    await fetch(`/issue/${id}`, {
+        method: "POST",
+        body: new URLSearchParams({ qty })
+    });
+
+    location.reload(); // 🔥 here
+}
+
+function reloadPage() {
+    setTimeout(() => {
+        location.reload();
+    }, 300); // slight delay for backend update
+    return true;
 }
 </script>
 </body>
