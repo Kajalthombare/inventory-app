@@ -1,363 +1,857 @@
 <!DOCTYPE html>
-
-<html>
+<html lang="en">
 <head>
-    <title>Inventory System</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard — InvenPro Inventory</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-```
-<style>
-    thead th {
-        position: sticky;
-        top: 0;
-        z-index: 1;
-    }
-</style>
-```
+        :root {
+            --primary: #2563eb;
+            --primary-light: #eff6ff;
+            --primary-dark: #1d4ed8;
+            --success: #059669;
+            --success-light: #ecfdf5;
+            --warning: #d97706;
+            --warning-light: #fffbeb;
+            --danger: #dc2626;
+            --danger-light: #fef2f2;
+            --sidebar-w: 240px;
+            --header-h: 60px;
+            --bg: #f1f5f9;
+            --card: #ffffff;
+            --text: #0f172a;
+            --text-muted: #64748b;
+            --border: #e2e8f0;
+            --shadow: 0 1px 3px rgba(0,0,0,0.06), 0 2px 8px rgba(0,0,0,0.04);
+            --shadow-md: 0 4px 12px rgba(0,0,0,0.08);
+        }
 
+        body {
+            font-family: 'Inter', sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            display: flex;
+            min-height: 100vh;
+        }
+
+        /* ── SIDEBAR ── */
+        .sidebar {
+            width: var(--sidebar-w);
+            background: #0d1f3c;
+            display: flex;
+            flex-direction: column;
+            position: fixed;
+            top: 0; left: 0; bottom: 0;
+            z-index: 100;
+        }
+
+        .sidebar-logo {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 18px 20px;
+            border-bottom: 1px solid rgba(255,255,255,0.07);
+        }
+
+        .sidebar-logo-icon {
+            width: 36px; height: 36px;
+            background: linear-gradient(135deg, #3b82f6, #2563eb);
+            border-radius: 9px;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 18px;
+        }
+
+        .sidebar-logo-text {
+            font-size: 16px;
+            font-weight: 700;
+            color: #fff;
+            letter-spacing: -0.3px;
+        }
+
+        .sidebar-nav {
+            flex: 1;
+            padding: 12px 10px;
+            overflow-y: auto;
+        }
+
+        .nav-section-label {
+            font-size: 10px;
+            font-weight: 600;
+            letter-spacing: 1.5px;
+            text-transform: uppercase;
+            color: rgba(255,255,255,0.3);
+            padding: 10px 10px 6px;
+        }
+
+        .nav-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 9px 12px;
+            border-radius: 8px;
+            color: rgba(255,255,255,0.6);
+            font-size: 13.5px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.15s;
+            margin-bottom: 2px;
+            text-decoration: none;
+        }
+
+        .nav-item:hover {
+            background: rgba(255,255,255,0.07);
+            color: #fff;
+        }
+
+        .nav-item.active {
+            background: rgba(59,130,246,0.2);
+            color: #60a5fa;
+        }
+
+        .nav-item .nav-icon { font-size: 16px; }
+
+        .sidebar-footer {
+            padding: 14px 10px;
+            border-top: 1px solid rgba(255,255,255,0.07);
+        }
+
+        .user-card {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 10px 12px;
+            border-radius: 8px;
+            background: rgba(255,255,255,0.05);
+        }
+
+        .user-avatar {
+            width: 32px; height: 32px;
+            background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+            border-radius: 8px;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 14px;
+            font-weight: 700;
+            color: #fff;
+            flex-shrink: 0;
+        }
+
+        .user-info { flex: 1; min-width: 0; }
+        .user-name { font-size: 13px; font-weight: 600; color: #fff; }
+        .user-role { font-size: 11px; color: rgba(255,255,255,0.4); }
+
+        .logout-btn {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 28px; height: 28px;
+            border-radius: 6px;
+            background: rgba(239,68,68,0.15);
+            color: #f87171;
+            text-decoration: none;
+            font-size: 14px;
+            flex-shrink: 0;
+            transition: background 0.15s;
+        }
+        .logout-btn:hover { background: rgba(239,68,68,0.3); }
+
+        /* ── MAIN CONTENT ── */
+        .main {
+            margin-left: var(--sidebar-w);
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            min-width: 0;
+        }
+
+        /* ── TOP HEADER ── */
+        .topbar {
+            height: var(--header-h);
+            background: var(--card);
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 28px;
+            position: sticky;
+            top: 0;
+            z-index: 50;
+        }
+
+        .topbar-title {
+            font-size: 16px;
+            font-weight: 700;
+            color: var(--text);
+        }
+
+        .topbar-search {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            background: var(--bg);
+            border: 1.5px solid var(--border);
+            border-radius: 8px;
+            padding: 7px 12px;
+            width: 260px;
+            transition: border-color 0.2s;
+        }
+
+        .topbar-search:focus-within {
+            border-color: var(--primary);
+        }
+
+        .topbar-search input {
+            background: none;
+            border: none;
+            outline: none;
+            font-family: 'Inter', sans-serif;
+            font-size: 13px;
+            color: var(--text);
+            width: 100%;
+        }
+
+        .topbar-search input::placeholder { color: var(--text-muted); }
+
+        /* ── PAGE BODY ── */
+        .page-body {
+            padding: 24px 28px;
+            flex: 1;
+        }
+
+        /* ── STAT CARDS ── */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+
+        .stat-card {
+            background: var(--card);
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: var(--shadow);
+            border: 1px solid var(--border);
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .stat-label {
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .stat-value {
+            font-size: 22px;
+            font-weight: 700;
+            color: var(--text);
+            letter-spacing: -0.5px;
+        }
+
+        .stat-icon {
+            width: 36px; height: 36px;
+            border-radius: 9px;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 17px;
+            margin-bottom: 4px;
+        }
+
+        /* ── SECTION CARDS ── */
+        .section-card {
+            background: var(--card);
+            border-radius: 12px;
+            border: 1px solid var(--border);
+            box-shadow: var(--shadow);
+            margin-bottom: 20px;
+            overflow: hidden;
+        }
+
+        .section-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 16px 20px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .section-title {
+            font-size: 14px;
+            font-weight: 700;
+            color: var(--text);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .section-body {
+            padding: 20px;
+        }
+
+        /* ── FORM CONTROLS ── */
+        .form-row {
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+            align-items: flex-end;
+        }
+
+        .form-field {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+            min-width: 100px;
+        }
+
+        .form-field label {
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.4px;
+        }
+
+        .form-input {
+            padding: 9px 12px;
+            background: var(--bg);
+            border: 1.5px solid var(--border);
+            border-radius: 8px;
+            font-family: 'Inter', sans-serif;
+            font-size: 13.5px;
+            color: var(--text);
+            outline: none;
+            transition: all 0.2s;
+        }
+
+        .form-input:focus {
+            border-color: var(--primary);
+            background: #fff;
+            box-shadow: 0 0 0 3px rgba(37,99,235,0.1);
+        }
+
+        /* ── BUTTONS ── */
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 9px 16px;
+            font-family: 'Inter', sans-serif;
+            font-size: 13px;
+            font-weight: 600;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.15s;
+            white-space: nowrap;
+            text-decoration: none;
+        }
+
+        .btn-primary {
+            background: var(--primary);
+            color: #fff;
+            box-shadow: 0 2px 8px rgba(37,99,235,0.25);
+        }
+        .btn-primary:hover { background: var(--primary-dark); transform: translateY(-1px); }
+
+        .btn-success {
+            background: var(--success);
+            color: #fff;
+            box-shadow: 0 2px 8px rgba(5,150,105,0.2);
+        }
+        .btn-success:hover { background: #047857; transform: translateY(-1px); }
+
+        .btn-warning {
+            background: var(--warning);
+            color: #fff;
+            box-shadow: 0 2px 8px rgba(217,119,6,0.2);
+        }
+        .btn-warning:hover { background: #b45309; }
+
+        .btn-danger {
+            background: var(--danger);
+            color: #fff;
+        }
+        .btn-danger:hover { background: #b91c1c; }
+
+        .btn-ghost {
+            background: var(--bg);
+            color: var(--text-muted);
+            border: 1.5px solid var(--border);
+        }
+        .btn-ghost:hover { background: var(--border); color: var(--text); }
+
+        .btn-sm {
+            padding: 6px 10px;
+            font-size: 12px;
+        }
+
+        /* ── TABLE ── */
+        .table-wrap {
+            overflow-x: auto;
+        }
+
+        .data-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 13px;
+        }
+
+        .data-table thead th {
+            background: #f8fafc;
+            color: var(--text-muted);
+            font-size: 11px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.6px;
+            padding: 10px 16px;
+            text-align: left;
+            border-bottom: 1px solid var(--border);
+            white-space: nowrap;
+            position: sticky;
+            top: 0;
+        }
+
+        .data-table tbody tr {
+            border-bottom: 1px solid #f1f5f9;
+            transition: background 0.12s;
+        }
+
+        .data-table tbody tr:hover { background: #f8fafc; }
+
+        .data-table tbody td {
+            padding: 11px 16px;
+            color: var(--text);
+            vertical-align: middle;
+        }
+
+        .badge {
+            display: inline-flex;
+            align-items: center;
+            padding: 3px 9px;
+            border-radius: 20px;
+            font-size: 11px;
+            font-weight: 600;
+        }
+
+        .badge-danger { background: var(--danger-light); color: var(--danger); }
+        .badge-warning { background: var(--warning-light); color: var(--warning); }
+        .badge-success { background: var(--success-light); color: var(--success); }
+
+        .actions-group {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .qty-input {
+            width: 70px;
+            padding: 5px 8px;
+            border: 1.5px solid var(--border);
+            border-radius: 6px;
+            font-family: 'Inter', sans-serif;
+            font-size: 13px;
+            outline: none;
+            text-align: center;
+        }
+
+        .qty-input:focus { border-color: var(--primary); }
+
+        /* ── SALES SUMMARY ── */
+        .summary-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 14px;
+            margin-top: 16px;
+        }
+
+        .summary-item {
+            background: var(--bg);
+            border-radius: 10px;
+            padding: 14px;
+            text-align: center;
+        }
+
+        .summary-item .label { font-size: 11px; color: var(--text-muted); font-weight: 600; text-transform: uppercase; }
+        .summary-item .value { font-size: 18px; font-weight: 700; color: var(--text); margin-top: 4px; }
+        .summary-item .value.green { color: var(--success); }
+
+        /* ── DATE PILL BUTTONS ── */
+        .date-pills {
+            display: flex;
+            gap: 6px;
+        }
+
+        .pill-btn {
+            padding: 5px 12px;
+            border-radius: 20px;
+            border: 1.5px solid var(--border);
+            background: var(--card);
+            font-family: 'Inter', sans-serif;
+            font-size: 12px;
+            font-weight: 500;
+            color: var(--text-muted);
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+
+        .pill-btn:hover {
+            background: var(--primary);
+            color: #fff;
+            border-color: var(--primary);
+        }
+
+        /* ── QUOTATION TABLE ── */
+        .q-table-input {
+            width: 100%;
+            padding: 6px 10px;
+            border: 1.5px solid var(--border);
+            border-radius: 6px;
+            font-family: 'Inter', sans-serif;
+            font-size: 13px;
+            outline: none;
+            background: var(--bg);
+        }
+
+        .q-table-input:focus { border-color: var(--primary); background: #fff; }
+
+        /* ── GRAND TOTAL ── */
+        .grand-total-row {
+            display: flex;
+            justify-content: flex-end;
+            align-items: center;
+            gap: 16px;
+            padding: 14px 0 4px;
+            border-top: 1px solid var(--border);
+            margin-top: 4px;
+        }
+
+        .grand-total-label { font-size: 14px; color: var(--text-muted); font-weight: 600; }
+        .grand-total-value { font-size: 22px; font-weight: 800; color: var(--text); letter-spacing: -0.5px; }
+
+        /* ── DIVIDER ── */
+        .section-divider {
+            height: 1px;
+            background: var(--border);
+            margin: 20px 0;
+        }
+    </style>
 </head>
+<body>
 
-<body class="bg-light">
-
-<div class="container mt-4">
-
-```
-<h2 class="text-center mb-4">📦 Inventory Management</h2>
-
-<!-- EXPORT -->
-<div class="card shadow-sm border-0 mb-4" style="border-radius:12px;">
-    
-    <!-- HEADER -->
-    <div class="card-header bg-white d-flex justify-content-between align-items-center" 
-         style="border-bottom:1px solid #eee;">
-        <h5 class="mb-0 fw-bold">📊 Sales Report</h5>
-
-        <button onclick="exportExcel()" 
-                class="btn btn-warning d-flex align-items-center gap-2 px-3"
-                style="white-space: nowrap; min-width:140px;">
-            ⬇ Export Excel
-        </button>
+<!-- ═══════════════ SIDEBAR ═══════════════ -->
+<aside class="sidebar">
+    <div class="sidebar-logo">
+        <div class="sidebar-logo-icon">📦</div>
+        <span class="sidebar-logo-text">InvenPro</span>
     </div>
 
-    <!-- FILTER SECTION -->
-    <div class="card-body">
+    <nav class="sidebar-nav">
+        <div class="nav-section-label">Main</div>
+        <a class="nav-item active" href="#">
+            <span class="nav-icon">🗃</span> Inventory
+        </a>
+        <a class="nav-item" href="#sales-section">
+            <span class="nav-icon">📊</span> Sales Report
+        </a>
+        <a class="nav-item" href="#quotation-section">
+            <span class="nav-icon">📋</span> Quotation
+        </a>
 
-        <div class="row g-3 align-items-end mb-4">
+        <div class="nav-section-label" style="margin-top:8px;">Tools</div>
+        <a class="nav-item" href="#add-product-section">
+            <span class="nav-icon">➕</span> Add Product
+        </a>
+        <a class="nav-item" href="#upload-section">
+            <span class="nav-icon">📥</span> Upload Order
+        </a>
+    </nav>
 
-            <div class="col-md-3">
-                <label class="form-label fw-semibold">From Date</label>
-                <input type="date" id="start_date" class="form-control">
+    <div class="sidebar-footer">
+        <div class="user-card">
+            <div class="user-avatar">A</div>
+            <div class="user-info">
+                <div class="user-name">Admin</div>
+                <div class="user-role">Administrator</div>
             </div>
+            <a href="/logout" class="logout-btn" title="Logout">🚪</a>
+        </div>
+    </div>
+</aside>
 
-            <div class="col-md-3">
-                <label class="form-label fw-semibold">To Date</label>
-                <input type="date" id="end_date" class="form-control">
+<!-- ═══════════════ MAIN ═══════════════ -->
+<div class="main">
 
+    <!-- Top Bar -->
+    <div class="topbar">
+        <span class="topbar-title">Inventory Dashboard</span>
+        <div class="topbar-search">
+            <span style="color:#94a3b8;font-size:14px;">🔍</span>
+            <input type="text" id="search" placeholder="Search by part number…">
+        </div>
+    </div>
+
+    <div class="page-body">
+
+        <!-- ── STAT CARDS ── -->
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-icon" style="background:#eff6ff;">📦</div>
+                <div class="stat-label">Total Products</div>
+                <div class="stat-value" id="stat-total">—</div>
             </div>
-
-            <div class="col-md-2">
-                <button onclick="getSales()" 
-                        class="btn btn-primary w-100 fw-semibold">
-                    Check Sales
-                </button>
-                
+            <div class="stat-card">
+                <div class="stat-icon" style="background:#ecfdf5;">✅</div>
+                <div class="stat-label">In Stock</div>
+                <div class="stat-value" id="stat-instock" style="color:var(--success);">—</div>
             </div>
-            <div class="d-flex gap-2 mb-3">
-
-                <button onclick="setThisMonth()" class="btn btn-outline-primary btn-sm">
-                    📅 This Month
-                </button>
-
-                <button onclick="setLastMonth()" class="btn btn-outline-secondary btn-sm">
-                    📅 Last Month
-                </button>
-
+            <div class="stat-card">
+                <div class="stat-icon" style="background:#fef2f2;">⚠️</div>
+                <div class="stat-label">Out of Stock</div>
+                <div class="stat-value" id="stat-outstock" style="color:var(--danger);">—</div>
             </div>
-
+            <div class="stat-card">
+                <div class="stat-icon" style="background:#fffbeb;">💰</div>
+                <div class="stat-label">Inventory Value</div>
+                <div class="stat-value" id="stat-value" style="font-size:16px;">₹ {{ total_value }}</div>
+            </div>
         </div>
 
-        <!-- RESULT CARDS -->
-        <div class="row g-3">
+        <!-- ── SALES REPORT ── -->
+        <div class="section-card" id="sales-section">
+            <div class="section-header">
+                <div class="section-title">📊 Sales Report</div>
+                <button onclick="exportExcel()" class="btn btn-warning btn-sm">⬇ Export Excel</button>
+            </div>
+            <div class="section-body">
+                <div class="form-row">
+                    <div class="form-field">
+                        <label>From Date</label>
+                        <input type="date" id="start_date" class="form-input">
+                    </div>
+                    <div class="form-field">
+                        <label>To Date</label>
+                        <input type="date" id="end_date" class="form-input">
+                    </div>
+                    <button onclick="getSales()" class="btn btn-primary" style="margin-bottom:1px;">Check Sales</button>
+                    <div class="date-pills" style="margin-bottom:1px;">
+                        <button onclick="setThisMonth()" class="pill-btn">This Month</button>
+                        <button onclick="setLastMonth()" class="pill-btn">Last Month</button>
+                    </div>
+                </div>
 
-            <div class="col-md-3">
-                <div class="p-3 bg-light rounded shadow-sm text-center">
-                    <small class="text-muted">Total Orders</small>
-                    <h4 class="fw-bold mt-1" id="total_orders">0</h4>
+                <div class="summary-grid">
+                    <div class="summary-item">
+                        <div class="label">Total Orders</div>
+                        <div class="value" id="total_orders">—</div>
+                    </div>
+                    <div class="summary-item">
+                        <div class="label">Total Sales</div>
+                        <div class="value green">₹ <span id="total_sales">—</span></div>
+                    </div>
+                    <div class="summary-item">
+                        <div class="label">CGST</div>
+                        <div class="value">₹ <span id="total_cgst">—</span></div>
+                    </div>
+                    <div class="summary-item">
+                        <div class="label">SGST</div>
+                        <div class="value">₹ <span id="total_sgst">—</span></div>
+                    </div>
                 </div>
             </div>
-
-            <div class="col-md-3">
-                <div class="p-3 bg-light rounded shadow-sm text-center">
-                    <small class="text-muted">Total Sales</small>
-                    <h4 class="fw-bold text-success mt-1">
-                        ₹ <span id="total_sales">0</span>
-                    </h4>
-                </div>
-            </div>
-
-            <div class="col-md-3">
-                <div class="p-3 bg-light rounded shadow-sm text-center">
-                    <small class="text-muted">CGST</small>
-                    <h5 class="fw-semibold mt-1">
-                        ₹ <span id="total_cgst">0</span>
-                    </h5>
-                </div>
-            </div>
-
-            <div class="col-md-3">
-                <div class="p-3 bg-light rounded shadow-sm text-center">
-                    <small class="text-muted">SGST</small>
-                    <h5 class="fw-semibold mt-1">
-                        ₹ <span id="total_sgst">0</span>
-                    </h5>
-                </div>
-            </div>
-
         </div>
 
-    </div>
-</div>
-
-<!-- ADD PRODUCT -->
-<div class="card mb-4">
-    <div class="card-header">Add Product</div>
-    <div class="card-body">
-
-        <form action="/add" method="post" class="row g-3">
-
-            <div class="col-md-2">
-                <input id="part_no_input" name="part_no" class="form-control" placeholder="Part No" required>
+        <!-- ── ADD PRODUCT ── -->
+        <div class="section-card" id="add-product-section">
+            <div class="section-header">
+                <div class="section-title">➕ Add / Update Product</div>
             </div>
-
-            <div class="col-md-3">
-                <input name="description" class="form-control" placeholder="Description" required>
+            <div class="section-body">
+                <form action="/add" method="post" class="form-row">
+                    <div class="form-field" style="min-width:130px;">
+                        <label>Part No</label>
+                        <input id="part_no_input" name="part_no" class="form-input" placeholder="Part No" required>
+                    </div>
+                    <div class="form-field" style="flex:1;min-width:160px;">
+                        <label>Description</label>
+                        <input name="description" class="form-input" placeholder="Description" required>
+                    </div>
+                    <div class="form-field" style="min-width:100px;">
+                        <label>HSN</label>
+                        <input name="hsn" class="form-input" placeholder="HSN">
+                    </div>
+                    <div class="form-field" style="min-width:70px;">
+                        <label>GST %</label>
+                        <input name="gst" value="18" class="form-input">
+                    </div>
+                    <div class="form-field" style="min-width:80px;">
+                        <label>Qty</label>
+                        <input name="quantity" type="number" class="form-input" placeholder="0">
+                    </div>
+                    <div class="form-field" style="min-width:90px;">
+                        <label>Rate (₹)</label>
+                        <input name="rate" type="number" class="form-input" placeholder="0">
+                    </div>
+                    <div class="form-field" style="min-width:80px;">
+                        <label>Disc %</label>
+                        <input name="discount" type="number" class="form-input" placeholder="0">
+                    </div>
+                    <div class="form-field" style="min-width:100px;">
+                        <label>Amount</label>
+                        <input name="amount" type="number" class="form-input" placeholder="0" readonly style="background:#f8fafc;">
+                    </div>
+                    <button type="submit" class="btn btn-primary" style="margin-bottom:1px;">Add</button>
+                </form>
             </div>
-
-            <div class="col-md-2">
-                <input name="hsn" class="form-control" placeholder="HSN">
-            </div>
-
-            <div class="col-md-1">
-                <input name="gst" value="18" class="form-control">
-            </div>
-
-            <div class="col-md-1">
-                <input name="quantity" type="number" class="form-control" placeholder="Qty">
-            </div>
-
-            <div class="col-md-1">
-                <input name="rate" type="number" class="form-control" placeholder="Rate">
-            </div>
-
-            <div class="col-md-1">
-                <input name="discount" type="number" class="form-control" placeholder="Disc%">
-            </div>
-
-            <div class="col-md-1">
-                <input name="amount" type="number" class="form-control" placeholder="Amount" readonly>
-            </div>
-
-            <div class="col-12 text-end">
-                <button class="btn btn-primary">Add Product</button>
-            </div>
-
-
-        </form>
-
-    </div>
-</div>
-<!-- 🔥 QUICK QUOTATION BOX -->
-
-<!-- 🔥 QUICK QUOTATION BOX -->
-
-<div class="card mb-3">
-
-    <div class="card-header">⚡ Multi Product Quotation</div>
-
-    <div class="card-body">
-
-        <table class="table table-bordered text-center" id="q_table">
-            <thead>
-                <tr>
-                    <th>Part No</th>
-                    <th>Rate</th>
-                    <th>Qty</th>
-                    <th>Discount %</th>
-                    <th>Total</th>
-                    <th>Action</th>
-                </tr>
-            </thead>
-
-            <tbody id="q_body"></tbody>
-        </table>
-
-        <button onclick="addRow()" class="btn btn-primary">
-            ➕ Add Product
-        </button>
-
-        <div class="mt-3 text-end">
-            <h5>Grand Total: ₹ <span id="grand_total">0</span></h5>
         </div>
 
-        <div class="text-end">
-            <button onclick="downloadQuotation()" class="btn btn-success mt-2">
-                Generate Excel
-            </button>
-
-            <button onclick="downloadPDF()" class="btn btn-danger mt-2">
-                Generate PDF
-            </button>
+        <!-- ── QUOTATION ── -->
+        <div class="section-card" id="quotation-section">
+            <div class="section-header">
+                <div class="section-title">📋 Multi-Product Quotation</div>
+                <div style="display:flex;gap:8px;">
+                    <button onclick="addRow()" class="btn btn-ghost btn-sm">+ Add Row</button>
+                    <button onclick="downloadQuotation()" class="btn btn-success btn-sm">Excel</button>
+                    <button onclick="downloadPDF()" class="btn btn-danger btn-sm">PDF Invoice</button>
+                </div>
+            </div>
+            <div class="section-body">
+                <div class="table-wrap">
+                    <table class="data-table" id="q_table">
+                        <thead>
+                            <tr>
+                                <th>Part No</th>
+                                <th>Description</th>
+                                <th>Rate (₹)</th>
+                                <th>Qty</th>
+                                <th>Discount %</th>
+                                <th>Total (₹)</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody id="q_body"></tbody>
+                    </table>
+                </div>
+                <div class="grand-total-row">
+                    <span class="grand-total-label">Grand Total</span>
+                    <span class="grand-total-value">₹ <span id="grand_total">0.00</span></span>
+                </div>
+            </div>
         </div>
 
-    </div>
+        <!-- ── UPLOAD ORDER ── -->
+        <div class="section-card" id="upload-section">
+            <div class="section-header">
+                <div class="section-title">📥 Upload Order Excel</div>
+            </div>
+            <div class="section-body">
+                <form id="orderForm" enctype="multipart/form-data" class="form-row">
+                    <input type="file" name="file" required style="font-size:13px;">
+                    <button type="button" onclick="uploadOrder()" class="btn btn-primary">Process Order</button>
+                </form>
+            </div>
+        </div>
 
-</div>
+        <!-- ── PRODUCT TABLE ── -->
+        <div class="section-card">
+            <div class="section-header">
+                <div class="section-title">🗃 Product Inventory</div>
+                <span style="font-size:12px;color:var(--text-muted);">Total Value: <strong>₹ {{ total_value }}</strong></span>
+            </div>
+            <div class="table-wrap">
+                <table class="data-table" id="productTable">
+                    <thead>
+                        <tr>
+                            <th>Part No</th>
+                            <th>Description</th>
+                            <th>HSN</th>
+                            <th>GST %</th>
+                            <th>Qty</th>
+                            <th>Rate (₹)</th>
+                            <th>Disc %</th>
+                            <th>Amount (₹)</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    {% for p in products %}
+                        <tr>
+                            <td style="font-weight:600;">{{ p.part_no }}</td>
+                            <td style="color:var(--text-muted);">{{ p.description }}</td>
+                            <td>{{ p.hsn }}</td>
+                            <td>{{ p.gst }}%</td>
+                            <td>
+                                {% if p.quantity == 0 %}
+                                    <span class="badge badge-danger">Out of Stock</span>
+                                {% elif p.quantity < 5 %}
+                                    <span class="badge badge-warning">{{ p.quantity }}</span>
+                                {% else %}
+                                    <span class="badge badge-success">{{ p.quantity }}</span>
+                                {% endif %}
+                            </td>
+                            <td>{{ "%.2f"|format(p.rate or 0) }}</td>
+                            <td>{{ p.discount or 0 }}%</td>
+                            <td style="font-weight:600;">
+                                {% if p.quantity == 0 %}0.00
+                                {% else %}{{ "%.2f"|format(p.amount or 0) }}
+                                {% endif %}
+                            </td>
+                            <td>
+                                <div class="actions-group">
+                                    <form action="/issue/{{p.id}}" method="post" onsubmit="return reloadPage()" style="display:flex;gap:4px;align-items:center;">
+                                        <input name="qty" type="number" min="1" max="{{p.quantity}}" required class="qty-input"
+                                            {% if p.quantity == 0 %}disabled{% endif %}>
+                                        <button class="btn btn-danger btn-sm" {% if p.quantity == 0 %}disabled{% endif %} title="Issue">−</button>
+                                    </form>
+                                    <form action="/add_stock/{{p.id}}" method="post" onsubmit="return reloadPage()" style="display:flex;gap:4px;align-items:center;">
+                                        <input name="qty" type="number" min="1" required class="qty-input">
+                                        <button class="btn btn-success btn-sm" title="Add Stock">+</button>
+                                    </form>
+                                </div>
+                            </td>
+                        </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
 
+    </div><!-- /page-body -->
+</div><!-- /main -->
 
-<!-- SEARCH -->
-<input type="text" id="search" class="form-control mb-3" placeholder="🔍 Search by Part Number...">
-
-<!-- PRODUCT TABLE -->
-<div class="card">
-    <div class="card-header">Products</div>
-
-    <div class="table-responsive">
-        <table class="table table-bordered table-hover text-center" id="productTable">
-
-            <thead class="table-dark">
-                <tr>
-                    <th>Part No</th>
-                    <th>Description</th>
-                    <th>HSN</th>
-                    <th>GST%</th>
-                    <th>Qty</th>
-                    <th>Rate</th>
-                    <th>Disc%</th>
-                    <th>Amount</th>
-                    <th>Actions</th>
-                </tr>
-            </thead>
-
-            <tbody>
-            {% for p in products %}
-                <tr class="{% if p.quantity == 0 %}table-danger{% endif %}">
-                    <td>{{ p.part_no }}</td>
-                    <td>{{ p.description }}</td>
-                    <td>{{ p.hsn }}</td>
-                    <td>{{ p.gst }}</td>
-
-                    <td class="
-                        {% if p.quantity == 0 %}
-                            text-danger fw-bold
-                        {% elif p.quantity < 5 %}
-                            text-warning fw-bold
-                        {% endif %}
-                    ">
-                        {% if p.quantity == 0 %}
-                            OUT OF STOCK
-                        {% else %}
-                            {{ p.quantity }}
-                        {% endif %}
-                    </td>
-
-                    <td>₹ {{ "%.2f"|format(p.rate or 0) }}</td>
-                    <td>{{ p.discount or 0 }}%</td>
-                    <td>
-                        {% if p.quantity == 0 %}
-                            ₹ 0.00
-                        {% else %}
-                            ₹ {{ "%.2f"|format(p.amount or 0) }}
-                        {% endif %}
-                    </td>
-
-                    <td>
-                        <div class="d-flex justify-content-center gap-2">
-
-                            <form action="/issue/{{p.id}}" method="post" onsubmit="return reloadPage()"class="d-flex">
-                                <input name="qty" type="number" min="1" max="{{p.quantity}}" required 
-                                    class="form-control form-control-sm me-1" style="width:70px;"
-                                    {% if p.quantity == 0 %}disabled{% endif %}>
-                                
-                                <button class="btn btn-danger btn-sm" 
-                                        {% if p.quantity == 0 %}disabled{% endif %}>-</button>
-                            </form>
-
-                            <form action="/add_stock/{{p.id}}" method="post" onsubmit="return reloadPage()" class="d-flex">
-                                <input name="qty" type="number" min="1" required class="form-control form-control-sm me-1" style="width:70px;">
-                                <button class="btn btn-success btn-sm">+</button>
-                            </form>
-
-                        </div>
-                    </td>
-                </tr>
-            {% endfor %}
-            </tbody>
-
-        </table>
-    </div>
-</div>
-
-<!-- TOTAL -->
-<div class="mt-3 text-end">
-    <h5>Total Inventory Value: ₹ {{ total_value }}</h5>
-</div>
-
-<!-- ORDER UPLOAD -->
-<hr>
-
-<h4>📥 Upload Order Excel</h4>
-
-<form id="orderForm" enctype="multipart/form-data" class="mb-3">
-    <input type="file" name="file" required>
-    <button type="button" onclick="uploadOrder()" class="btn btn-primary">
-        Process Order
-    </button>
-</form>
-
-
-
-<!-- <table class="table table-bordered text-center mt-3">
-<thead class="table-dark">
-<tr>
-    <th>Part</th>
-    <th>Description</th>
-    <th>Stock</th>
-    <th>Qty</th>
-    <th>Rate</th>
-    <th>Discount</th>
-    <th>Status</th>
-</tr>
-</thead>
-
-<tbody id="orderBody"></tbody>
-</table> -->
-
-
-</div>
-
-<!-- ================= SCRIPT ================= -->
-
+<!-- ═══════════════ SCRIPTS ═══════════════ -->
 <script>
+// ── Stat cards ──
+(function(){
+    const rows = document.querySelectorAll('#productTable tbody tr');
+    const total = rows.length;
+    let inStock = 0, outStock = 0;
+    rows.forEach(r => {
+        const badge = r.querySelector('.badge');
+        if (badge && badge.classList.contains('badge-danger')) outStock++;
+        else inStock++;
+    });
+    document.getElementById('stat-total').textContent = total;
+    document.getElementById('stat-instock').textContent = inStock;
+    document.getElementById('stat-outstock').textContent = outStock;
+})();
 
-// SEARCH
-document.getElementById("search").addEventListener("keyup", function() {
-    let value = this.value.toLowerCase();
-    let rows = document.querySelectorAll("#productTable tbody tr");
-
-    rows.forEach(row => {
-        let partNo = row.cells[0].innerText.toLowerCase();
-        row.style.display = partNo.includes(value) ? "" : "none";
+// ── Search ──
+document.getElementById('search').addEventListener('keyup', function(){
+    const v = this.value.toLowerCase();
+    document.querySelectorAll('#productTable tbody tr').forEach(row => {
+        row.style.display = row.cells[0].innerText.toLowerCase().includes(v) ? '' : 'none';
     });
 });
 
-// AUTO FETCH RATE
-document.getElementById("part_no_input").addEventListener("change", async function() {
-
-    let partNo = this.value;
-
-    let res = await fetch(`/get_price/${partNo}`);
-    let data = await res.json();
-
+// ── Auto fetch rate ──
+document.getElementById('part_no_input').addEventListener('change', async function(){
+    const res = await fetch(`/get_price/${this.value}`);
+    const data = await res.json();
     if (!data.error) {
         document.querySelector('[name="description"]').value = data.description;
         document.querySelector('[name="rate"]').value = data.rate;
@@ -366,346 +860,130 @@ document.getElementById("part_no_input").addEventListener("change", async functi
     }
 });
 
-// CALCULATE AMOUNT
-function calculateAmount() {
-    let qty = document.querySelector('[name="quantity"]').value || 0;
-    let rate = document.querySelector('[name="rate"]').value || 0;
-    let disc = document.querySelector('[name="discount"]').value || 0;
-
-    let amount = qty * rate;
-    amount = amount - (amount * disc / 100);
-
+// ── Calculate amount ──
+function calculateAmount(){
+    const qty  = parseFloat(document.querySelector('[name="quantity"]').value) || 0;
+    const rate = parseFloat(document.querySelector('[name="rate"]').value) || 0;
+    const disc = parseFloat(document.querySelector('[name="discount"]').value) || 0;
+    const amount = (qty * rate) - (qty * rate * disc / 100);
     document.querySelector('[name="amount"]').value = amount.toFixed(2);
 }
+document.querySelector('[name="quantity"]').addEventListener('input', calculateAmount);
+document.querySelector('[name="rate"]').addEventListener('input', calculateAmount);
+document.querySelector('[name="discount"]').addEventListener('input', calculateAmount);
 
-document.querySelector('[name="quantity"]').addEventListener("input", calculateAmount);
-document.querySelector('[name="rate"]').addEventListener("input", calculateAmount);
-document.querySelector('[name="discount"]').addEventListener("input", calculateAmount);
-
-let rows = [];
-
-function addRow() {
-    rows.push({
-        part_no: "",
-        rate: 0,
-        qty: 1,
-        discount: 0
-    });
-    renderRows();
-}
-async function generatePDF() {
-
-    if (orderRows.length === 0) {
-        alert("Upload and load order first");
-        return;
-    }
-
-    let res = await fetch("/download_pdf", {
-        method: "POST",
-        headers: {"Content-Type": "application/json"},
-        body: JSON.stringify(orderRows)
-    });
-
-    let blob = await res.blob();
-    let url = window.URL.createObjectURL(blob);
-
-    let a = document.createElement("a");
-    a.href = url;
-    a.download = "quotation.pdf";
-    a.click();
-}
-
-<!-- your HTML above -->
-
-
-async function getSales() {
-    let start = document.getElementById("start_date").value;
-    let end = document.getElementById("end_date").value;
-
-    if (!start || !end) {
-        alert("Select both dates");
-        return;
-    }
-
-    let res = await fetch(`/sales_summary?start_date=${start}&end_date=${end}`);
-    let data = await res.json();
-
-    document.getElementById("total_orders").innerText = data.orders;
-    document.getElementById("total_sales").innerText =
-        new Intl.NumberFormat('en-IN').format(data.sales);
-    let gst = data.gst || 0;
-
-    document.getElementById("total_cgst").innerText =
-        new Intl.NumberFormat('en-IN').format(gst / 2);
-
-    document.getElementById("total_sgst").innerText =
-        new Intl.NumberFormat('en-IN').format(gst / 2);
+// ── Sales ──
+async function getSales(){
+    const start = document.getElementById('start_date').value;
+    const end   = document.getElementById('end_date').value;
+    if (!start || !end) { alert('Select both dates'); return; }
+    const data = await (await fetch(`/sales_summary?start_date=${start}&end_date=${end}`)).json();
+    document.getElementById('total_orders').textContent = data.orders;
+    document.getElementById('total_sales').textContent  = new Intl.NumberFormat('en-IN').format(data.sales);
+    const gst = data.gst || 0;
+    document.getElementById('total_cgst').textContent = new Intl.NumberFormat('en-IN').format(gst / 2);
+    document.getElementById('total_sgst').textContent = new Intl.NumberFormat('en-IN').format(gst / 2);
 }
 
 window.onload = () => {
-    let today = new Date().toISOString().split('T')[0];
-    document.getElementById("start_date").value = today;
-    document.getElementById("end_date").value = today;
+    const today = new Date().toISOString().split('T')[0];
+    document.getElementById('start_date').value = today;
+    document.getElementById('end_date').value   = today;
+    getSales();
 };
-function setThisMonth() {
-    let now = new Date();
 
-    let start = new Date(now.getFullYear(), now.getMonth(), 1);
-    let end = new Date();
-
-    setDates(start, end);
+function setThisMonth(){
+    const now = new Date();
+    setDates(new Date(now.getFullYear(), now.getMonth(), 1), new Date());
 }
-function setLastMonth() {
-    let now = new Date();
-
-    let start = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-    let end = new Date(now.getFullYear(), now.getMonth(), 0);
-
-    setDates(start, end);
+function setLastMonth(){
+    const now = new Date();
+    setDates(new Date(now.getFullYear(), now.getMonth()-1, 1), new Date(now.getFullYear(), now.getMonth(), 0));
 }
-function setDates(start, end) {
-
-    let format = (d) => d.toISOString().split('T')[0];
-
-    document.getElementById("start_date").value = format(start);
-    document.getElementById("end_date").value = format(end);
-
-    // 🔥 AUTO LOAD SALES
+function setDates(s, e){
+    const fmt = d => d.toISOString().split('T')[0];
+    document.getElementById('start_date').value = fmt(s);
+    document.getElementById('end_date').value   = fmt(e);
     getSales();
 }
 
+function exportExcel(){
+    const s = document.getElementById('start_date').value;
+    const e = document.getElementById('end_date').value;
+    if (!s || !e) { alert('Select dates first'); return; }
+    window.open(`/export_excel?start_date=${s}&end_date=${e}`);
+}
 
-
-async function fetchRate(i) {
-    let part = rows[i].part_no;
-
-    let res = await fetch(`/get_rate/${part}`);
-    let data = await res.json();
-
-    rows[i].rate = data.rate || 0;
+// ── Quotation rows ──
+let rows = [];
+function addRow(){
+    rows.push({ part_no:'', description:'', rate:0, qty:1, discount:0 });
     renderRows();
 }
-function exportExcel() {
-    let start = document.getElementById("start_date").value;
-    let end = document.getElementById("end_date").value;
-
-    if (!start || !end) {
-        alert("Select dates first");
-        return;
-    }
-
-    window.open(`/export_excel?start_date=${start}&end_date=${end}`);
+async function fetchRate(i){
+    const partNo = rows[i].part_no.trim();
+    if (!partNo) return;
+    const data = await (await fetch(`/get_rate/${encodeURIComponent(partNo)}`)).json();
+    rows[i].rate        = data.rate        || 0;
+    rows[i].description = data.description || '';
+    renderRows();
 }
-function renderRows() {
-
-    let html = "";
-    let grand = 0;
-
+function renderRows(){
+    let html = '', grand = 0;
     rows.forEach((r, i) => {
-
-        let subtotal = r.rate * r.qty;
-        let disc = subtotal * (r.discount / 100);
-        let after = subtotal - disc;
-        let gst = after * 0.18;
-        let total = after + gst;
-
+        const sub   = r.rate * r.qty;
+        const disc  = sub * (r.discount / 100);
+        const after = sub - disc;
+        const total = after + after * 0.18;
         grand += total;
-
-        html += `
-        <tr>
+        html += `<tr>
             <td>
-                <input value="${r.part_no}" 
-                    onchange="rows[${i}].part_no=this.value; fetchRate(${i})"
-                    class="form-control">
+                <input value="${r.part_no}"
+                    onchange="rows[${i}].part_no=this.value"
+                    onblur="fetchRate(${i})"
+                    class="q-table-input"
+                    placeholder="Enter Part No">
             </td>
-
-            <td>${r.rate}</td>
-
-            <td>
-                <input type="number" value="${r.qty}" 
-                    onchange="rows[${i}].qty=parseFloat(this.value); renderRows()"
-                    class="form-control">
-            </td>
-
-            <td>
-                <input type="number" value="${r.discount}" 
-                    onchange="rows[${i}].discount=parseFloat(this.value); renderRows()"
-                    class="form-control">
-            </td>
-
-            <td>${total.toFixed(2)}</td>
-
-            <td>
-                <button onclick="deleteRow(${i})" class="btn btn-danger btn-sm">❌</button>
-            </td>
+            <td style="color:var(--text-muted);font-size:12px;min-width:140px;">${r.description || '<span style="opacity:0.4;">—</span>'}</td>
+            <td style="font-weight:600;">₹ ${r.rate.toFixed(2)}</td>
+            <td><input type="number" value="${r.qty}" min="1" onchange="rows[${i}].qty=parseFloat(this.value)||1;renderRows()" class="q-table-input" style="width:75px;"></td>
+            <td><input type="number" value="${r.discount}" min="0" max="100" onchange="rows[${i}].discount=parseFloat(this.value)||0;renderRows()" class="q-table-input" style="width:75px;"></td>
+            <td style="font-weight:700;color:var(--primary);">₹ ${total.toFixed(2)}</td>
+            <td><button onclick="deleteRow(${i})" class="btn btn-ghost btn-sm">✕</button></td>
         </tr>`;
     });
-
-    document.getElementById("q_body").innerHTML = html;
-    document.getElementById("grand_total").innerText = grand.toFixed(2);
+    document.getElementById('q_body').innerHTML = html;
+    document.getElementById('grand_total').textContent = grand.toFixed(2);
 }
-
-function deleteRow(i) {
-    rows.splice(i, 1);
-    renderRows();
-}
-
-// start with one row
+function deleteRow(i){ rows.splice(i,1); renderRows(); }
 addRow();
-// PROCESS ORDER
-async function uploadOrder() {
-    let formData = new FormData(document.getElementById("orderForm"));
 
-    await fetch("/upload_order", {
-        method: "POST",
-        body: formData
-    });
-
-    alert("Order uploaded successfully!");
-}
-
-
-
-// QUICK QUOTATION
-
-document.getElementById("q_part").addEventListener("change", async function() {
-
-    let part = this.value;
-
-    let res = await fetch(`/get_rate/${part}`);
-    let data = await res.json();
-
-    document.getElementById("q_rate").value = data.rate || 0;
-    calculateQuick();
-});
-
-function calculateQuick() {
-
-    let rate = parseFloat(document.getElementById("q_rate").value) || 0;
-    let qty = parseFloat(document.getElementById("q_qty").value) || 0;
-    let disc = parseFloat(document.getElementById("q_disc").value) || 0;
-
-    let subtotal = rate * qty;
-    let discount = subtotal * (disc / 100);
-    let after = subtotal - discount;
-
-    let gst = after * 0.18;
-    let total = after + gst;
-
-    document.getElementById("q_total").value = total.toFixed(2);
-}
-
-// auto calculate
-document.getElementById("q_qty").addEventListener("input", calculateQuick);
-document.getElementById("q_disc").addEventListener("input", calculateQuick);
-
-
-async function downloadQuotation() {
-
-    if (rows.length === 0) {
-        alert("No products added");
-        return;
-    }
-
-    console.log("Sending:", rows);
-
-    let res = await fetch("/download_quotation", {
-        method: "POST",
-        headers: {"Content-Type": "application/json"},
-        body: JSON.stringify(rows)
-    });
-
-    let blob = await res.blob();
-
-    let url = window.URL.createObjectURL(blob);
-
-    let a = document.createElement("a");
-    a.href = url;
-    a.download = "quotation.xlsx";
+async function downloadQuotation(){
+    if (!rows.length){ alert('No products added'); return; }
+    const blob = await (await fetch('/download_quotation',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(rows)})).blob();
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'quotation.xlsx';
     a.click();
 }
 
-</script>
-
-
-<script>
-async function downloadPDF() {
-
-    let res = await fetch("/download_pdf", {
-        method: "POST",
-        headers: {"Content-Type": "application/json"},
-        body: JSON.stringify(rows)
-    });
-
-    let html = await res.text();
-
-    let newWindow = window.open();
-    newWindow.document.open();
-    newWindow.document.write(html);
-    newWindow.document.close();
+async function downloadPDF(){
+    const res  = await fetch('/download_pdf',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(rows)});
+    const html = await res.text();
+    const w = window.open();
+    w.document.open(); w.document.write(html); w.document.close();
 }
 
-let orderRows = [];
-
-async function loadOrderItems() {
-
-    let res = await fetch("/get_order_items");
-    orderRows = await res.json();
-
-    renderOrder();
+// ── Upload order ──
+async function uploadOrder(){
+    const formData = new FormData(document.getElementById('orderForm'));
+    await fetch('/upload_order',{method:'POST',body:formData});
+    alert('Order uploaded successfully!');
 }
 
-function renderOrder() {
-
-    let html = "";
-
-    orderRows.forEach((r, i) => {
-
-        let red = r.stock == 0 ? "style='background:#ffe5e5'" : "";
-
-        html += `
-        <tr ${red}>
-            <td>${r.part_no}</td>
-            <td>${r.description}</td>
-            <td>${r.stock}</td>
-
-            <td>
-                <input type="number" value="${r.qty}"
-                    onchange="orderRows[${i}].qty=this.value"
-                    class="form-control">
-            </td>
-
-            <td>${r.rate}</td>
-
-            <td>
-                <input type="number" value="${r.discount}"
-                    onchange="orderRows[${i}].discount=this.value"
-                    class="form-control">
-            </td>
-
-            <td>
-                ${r.stock == 0 
-                    ? "<span class='text-danger fw-bold'>OUT</span>" 
-                    : "OK"}
-            </td>
-        </tr>`;
-    });
-
-    document.getElementById("orderBody").innerHTML = html;
-}
-async function issueStock(id, qty) {
-    await fetch(`/issue/${id}`, {
-        method: "POST",
-        body: new URLSearchParams({ qty })
-    });
-
-    location.reload(); // 🔥 here
-}
-
-function reloadPage() {
-    setTimeout(() => {
-        location.reload();
-    }, 300); // slight delay for backend update
+// ── Reload helper ──
+function reloadPage(){
+    setTimeout(() => location.reload(), 300);
     return true;
 }
 </script>

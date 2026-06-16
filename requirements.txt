@@ -9,3 +9,4 @@ openpyxl
 python-multipart
 pdfkit
 pdfplumber
+itsdangerous

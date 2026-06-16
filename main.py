@@ -1,4 +1,5 @@
-from fastapi import FastAPI, Form, Request, UploadFile, File
+from fastapi import FastAPI, Form, Request, UploadFile, File, Depends
+from starlette.middleware.sessions import SessionMiddleware
 from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 from sqlalchemy import create_engine, Column, Integer, String, Float, DateTime, case
 from sqlalchemy.orm import sessionmaker, declarative_base
@@ -16,9 +17,58 @@ from fastapi.responses import HTMLResponse
 from database import Base 
 
 from jinja2 import Environment, FileSystemLoader
+import os
+
 # ---------------- PROCESS ORDER ----------------
 
 app = FastAPI()
+
+# ── Session middleware ──
+app.add_middleware(SessionMiddleware, secret_key="inventory-secret-key-2026")
+
+# ── Hardcoded credentials ──
+ADMIN_USERNAME = "admin"
+ADMIN_PASSWORD = "admin123"
+
+# ── Auto-import inventory.xlsx on startup if products table is empty ──
+@app.on_event("startup")
+def auto_import_inventory():
+    db = SessionLocal()
+    try:
+        from sqlalchemy import text as _text
+        count = db.execute(_text("SELECT COUNT(*) FROM products")).scalar()
+        if count == 0:
+            xlsx_path = os.path.join(os.path.dirname(__file__), "inventory.xlsx")
+            if os.path.exists(xlsx_path):
+                import pandas as pd
+                df = pd.read_excel(xlsx_path, engine="openpyxl")
+                df.columns = [col.strip() for col in df.columns]
+                for _, row in df.iterrows():
+                    qty      = int(row.get("Qty", 0) or 0)
+                    rate     = float(row.get("Rate", 0) or 0)
+                    discount = float(row.get("Discount", 0) or 0)
+                    amount   = ((qty * rate) - (qty * rate * discount / 100)) if qty > 0 else 0.0
+                    db.execute(_text("""
+                        INSERT INTO products (part_no, description, hsn, gst, quantity, rate, discount, amount)
+                        VALUES (:pn, :desc, :hsn, :gst, :qty, :rate, :disc, :amt)
+                    """), {
+                        "pn":   str(row.get("Part No", "")).strip(),
+                        "desc": str(row.get("Description", "")).strip(),
+                        "hsn":  str(row.get("HSN", "")).strip(),
+                        "gst":  float(row.get("GST", 18) or 18),
+                        "qty":  qty, "rate": rate, "disc": discount,
+                        "amt":  round(amount, 2)
+                    })
+                db.commit()
+                print(f"✅ Auto-imported inventory.xlsx ({len(df)} products)")
+    except Exception as e:
+        print(f"⚠ Auto-import skipped: {e}")
+    finally:
+        db.close()
+
+# ── Auth helper ──
+def get_current_user(request: Request):
+    return request.session.get("user")
 templates = Jinja2Templates(directory="templates")
 from database import Base, engine, SessionLocal
 
@@ -124,8 +174,35 @@ def format_inr(amount):
 #         }
 #     )
 
+# ── Login routes ──
+@app.get("/login", response_class=HTMLResponse)
+def login_page(request: Request):
+    if request.session.get("user"):
+        return RedirectResponse("/", status_code=302)
+    return templates.TemplateResponse("login.html", {"request": request, "error": None})
+
+@app.post("/login", response_class=HTMLResponse)
+def login(request: Request, username: str = Form(...), password: str = Form(...)):
+    if username == ADMIN_USERNAME and password == ADMIN_PASSWORD:
+        request.session["user"] = username
+        return RedirectResponse("/", status_code=303)
+    return templates.TemplateResponse(
+        "login.html",
+        {"request": request, "error": "Invalid username or password. Please try again."},
+        status_code=401
+    )
+
+@app.get("/logout")
+def logout(request: Request):
+    request.session.clear()
+    return RedirectResponse("/login", status_code=302)
+
+# ── Protected home route ──
 @app.get("/", response_class=HTMLResponse)
 def home(request: Request):
+    if not request.session.get("user"):
+        return RedirectResponse("/login", status_code=302)
+
     db = SessionLocal()
 
     products = db.query(Product).order_by(
@@ -451,15 +528,26 @@ def process_order(file: UploadFile = File(...)):
 def get_rate(part_no: str):
     db = SessionLocal()
 
+    # Step 1: Check order_items (price master)
     item = db.execute(
-        text("SELECT mrp FROM order_items WHERE part_no = :p"),
+        text("SELECT mrp, description, hsn FROM order_items WHERE part_no = :p"),
         {"p": part_no}
     ).fetchone()
 
-    rate = float(item.mrp) if item else 0
+    rate        = float(item.mrp)         if item and item.mrp         else 0.0
+    description = item.description        if item and item.description  else ""
+    hsn         = str(item.hsn)           if item and item.hsn          else ""
+
+    # Step 2: Fallback to products table if rate is 0 or not found
+    if rate == 0:
+        product = db.query(Product).filter(Product.part_no == part_no).first()
+        if product:
+            rate        = float(product.rate or 0)
+            description = description or (product.description or "")
+            hsn         = hsn         or (product.hsn         or "")
 
     db.close()
-    return {"rate": rate}
+    return {"rate": rate, "description": description, "hsn": hsn}
 
 # ---------------- DOWNLOAD QUOTATION ----------------
 from datetime import datetime
@@ -469,13 +557,13 @@ from sqlalchemy import text
 def generate_invoice_no(db):
     today = datetime.now()
 
-    year_month = today.strftime("%Y-%m")   # 2026-05
+    year_month = today.strftime("%Y-%m")   # 2026-06
 
-    # Count how many invoices already exist this month
+    # Count how many invoices already exist this month (SQLite-compatible)
     count = db.execute(text("""
         SELECT COUNT(*) 
         FROM invoices 
-        WHERE DATE_FORMAT(date, '%Y-%m') = :ym
+        WHERE strftime('%Y-%m', date) = :ym
     """), {"ym": year_month}).scalar()
 
     serial = str(count + 1).zfill(3)   # 001, 002, 003
@@ -518,9 +606,17 @@ async def download_pdf(request: Request):
                 {"p": row["part_no"]}
             ).fetchone()
 
-            desc = db_item.description if db_item else ""
-            hsn = db_item.hsn if db_item else ""
-            rate = db_item.mrp if db_item else float(row["rate"])
+            desc = db_item.description if db_item and db_item.description else ""
+            hsn  = str(db_item.hsn)    if db_item and db_item.hsn         else ""
+
+            # ✅ Rate priority: order_items.mrp → frontend row rate → products.rate
+            rate = float(db_item.mrp) if db_item and db_item.mrp and float(db_item.mrp) > 0 else float(row.get("rate", 0))
+            if rate == 0:
+                prod_fallback = db.query(Product).filter(Product.part_no == row["part_no"]).first()
+                if prod_fallback:
+                    rate        = float(prod_fallback.rate        or 0)
+                    desc        = desc or (prod_fallback.description or "")
+                    hsn         = hsn  or (prod_fallback.hsn         or "")
 
             qty = float(row["qty"])
             disc = float(row["discount"])
@@ -583,10 +679,9 @@ async def download_pdf(request: Request):
             "inv": invoice_no,
             "cust": customer_name,
             "date": datetime.utcnow(),
-
-            "total": total,
-            "gst": cgst + sgst,
-            "grand": total + cgst + sgst
+            "total": round(subtotal, 2),      # subtotal before GST
+            "gst": cgst + sgst,               # total GST amount
+            "grand": total                    # grand total (subtotal + GST)
         })
 
         invoice_id = result.lastrowid
