@@ -220,13 +220,11 @@ def home(request: Request):
 
     db.close()
 
-    html = templates.get_template("index.html").render(
-        request=request,
-        products=products,
-        total_value=round(total_value, 2)
-    )
-
-    return HTMLResponse(content=html)
+    return templates.TemplateResponse("index.html", {
+        "request": request,
+        "products": products,
+        "total_value": round(total_value, 2)
+    })
 # ---------------- PRICE MASTER UPLOAD ----------------
 
 
