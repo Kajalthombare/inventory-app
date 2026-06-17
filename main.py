@@ -3,7 +3,6 @@ from starlette.middleware.sessions import SessionMiddleware
 from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 from sqlalchemy import create_engine, Column, Integer, String, Float, DateTime, case
 from sqlalchemy.orm import sessionmaker, declarative_base
-from starlette.templating import Jinja2Templates
 from jinja2 import Environment, FileSystemLoader
 from sqlalchemy import text
 import pandas as pd
@@ -70,13 +69,16 @@ def auto_import_inventory():
 # ── Auth helper ──
 def get_current_user(request: Request):
     return request.session.get("user")
-# Disable Jinja2 template cache to fix Python 3.14 + Jinja2 unhashable tuple error
+# Raw Jinja2 rendering — bypasses Starlette Jinja2Templates API version issues
 _jinja_env = Environment(
     loader=FileSystemLoader("templates"),
     cache_size=0,
     auto_reload=True
 )
-templates = Jinja2Templates(env=_jinja_env)
+
+def render(name: str, status_code: int = 200, **ctx) -> HTMLResponse:
+    html = _jinja_env.get_template(name).render(**ctx)
+    return HTMLResponse(content=html, status_code=status_code)
 from database import Base, engine, SessionLocal
 
 Base.metadata.create_all(bind=engine)
@@ -186,18 +188,14 @@ def format_inr(amount):
 def login_page(request: Request):
     if request.session.get("user"):
         return RedirectResponse("/", status_code=302)
-    return templates.TemplateResponse("login.html", {"request": request, "error": None})
+    return render("login.html", error=None)
 
 @app.post("/login", response_class=HTMLResponse)
 def login(request: Request, username: str = Form(...), password: str = Form(...)):
     if username == ADMIN_USERNAME and password == ADMIN_PASSWORD:
         request.session["user"] = username
         return RedirectResponse("/", status_code=303)
-    return templates.TemplateResponse(
-        "login.html",
-        {"request": request, "error": "Invalid username or password. Please try again."},
-        status_code=401
-    )
+    return render("login.html", status_code=401, error="Invalid username or password. Please try again.")
 
 @app.get("/logout")
 def logout(request: Request):
@@ -227,11 +225,7 @@ def home(request: Request):
 
     db.close()
 
-    return templates.TemplateResponse("index.html", {
-        "request": request,
-        "products": products,
-        "total_value": round(total_value, 2)
-    })
+    return render("index.html", products=products, total_value=round(total_value, 2))
 # ---------------- PRICE MASTER UPLOAD ----------------
 
 
@@ -874,16 +868,16 @@ async def view_quotation(request: Request):
             "final": round(final, 2)
         })
 
-    return templates.TemplateResponse("quotation.html", {
-        "request": request,
-        "items": items,
-        "total": round(total, 2),
-        "date": datetime.now().strftime("%d-%b-%Y"),
-        "buyer_name": "Thakur Infraprojects Private Limited",
-        "buyer_address": """Plot No. 265/01, Om Sadanika, Panvel
+    return render(
+        "quotation.html",
+        items=items,
+        total=round(total, 2),
+        date=datetime.now().strftime("%d-%b-%Y"),
+        buyer_name="Thakur Infraprojects Private Limited",
+        buyer_address="""Plot No. 265/01, Om Sadanika, Panvel
 Uran Road Uran Naka, Panvel, Raigad
 GSTIN: 27AACCT6451F1ZC"""
-    })
+    )
 @app.get("/build_quotation")
 def build_quotation():
     db = SessionLocal()
