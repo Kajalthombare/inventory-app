@@ -3,7 +3,8 @@ from starlette.middleware.sessions import SessionMiddleware
 from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 from sqlalchemy import create_engine, Column, Integer, String, Float, DateTime, case
 from sqlalchemy.orm import sessionmaker, declarative_base
-from fastapi.templating import Jinja2Templates
+from starlette.templating import Jinja2Templates
+from jinja2 import Environment, FileSystemLoader
 from sqlalchemy import text
 import pandas as pd
 import io
@@ -69,7 +70,13 @@ def auto_import_inventory():
 # ── Auth helper ──
 def get_current_user(request: Request):
     return request.session.get("user")
-templates = Jinja2Templates(directory="templates")
+# Disable Jinja2 template cache to fix Python 3.14 + Jinja2 unhashable tuple error
+_jinja_env = Environment(
+    loader=FileSystemLoader("templates"),
+    cache_size=0,
+    auto_reload=True
+)
+templates = Jinja2Templates(env=_jinja_env)
 from database import Base, engine, SessionLocal
 
 Base.metadata.create_all(bind=engine)
