@@ -533,20 +533,23 @@ def get_rate(part_no: str):
         {"p": part_no}
     ).fetchone()
 
-    rate        = float(item.mrp)         if item and item.mrp         else 0.0
-    description = item.description        if item and item.description  else ""
-    hsn         = str(item.hsn)           if item and item.hsn          else ""
+    rate        = float(item.mrp)   if item and item.mrp         else 0.0
+    description = item.description  if item and item.description  else ""
+    hsn         = str(item.hsn)     if item and item.hsn          else ""
+    stock       = 0
 
     # Step 2: Fallback to products table if rate is 0 or not found
-    if rate == 0:
-        product = db.query(Product).filter(Product.part_no == part_no).first()
-        if product:
+    product = db.query(Product).filter(Product.part_no == part_no).first()
+    if product:
+        stock = int(product.quantity or 0)
+        if rate == 0:
             rate        = float(product.rate or 0)
             description = description or (product.description or "")
             hsn         = hsn         or (product.hsn         or "")
 
     db.close()
-    return {"rate": rate, "description": description, "hsn": hsn}
+    return {"rate": rate, "description": description, "hsn": hsn, "stock": stock}
+
 
 # ---------------- DOWNLOAD QUOTATION ----------------
 from datetime import datetime
