@@ -557,19 +557,23 @@ from sqlalchemy import text
 
 
 def generate_invoice_no(db):
+    import calendar
     today = datetime.now()
 
     year_month = today.strftime("%Y-%m")   # 2026-06
 
-    # Count how many invoices already exist this month (SQLite-compatible)
+    # Python-side date range — works with both SQLite and PostgreSQL
+    first_day = today.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    last_day_num = calendar.monthrange(today.year, today.month)[1]
+    last_day = today.replace(day=last_day_num, hour=23, minute=59, second=59, microsecond=999999)
+
     count = db.execute(text("""
         SELECT COUNT(*) 
         FROM invoices 
-        WHERE strftime('%Y-%m', date) = :ym
-    """), {"ym": year_month}).scalar()
+        WHERE date >= :from_date AND date <= :to_date
+    """), {"from_date": first_day, "to_date": last_day}).scalar()
 
     serial = str(count + 1).zfill(3)   # 001, 002, 003
-
     return f"{year_month}-{serial}"
 @app.post("/download_pdf")
 async def download_pdf(request: Request):
