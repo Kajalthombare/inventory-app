@@ -36,6 +36,8 @@ def auto_import_inventory():
     db = SessionLocal()
     try:
         from sqlalchemy import text as _text
+
+        # ── 1. Import inventory.xlsx → products table ──
         count = db.execute(_text("SELECT COUNT(*) FROM products")).scalar()
         if count == 0:
             xlsx_path = os.path.join(os.path.dirname(__file__), "inventory.xlsx")
@@ -61,8 +63,49 @@ def auto_import_inventory():
                     })
                 db.commit()
                 print(f"✅ Auto-imported inventory.xlsx ({len(df)} products)")
+
+        # ── 2. Import orders.csv → order_items table (selling rates) ──
+        oi_count = db.execute(_text("SELECT COUNT(*) FROM order_items")).scalar()
+        if oi_count == 0:
+            csv_path = os.path.join(os.path.dirname(__file__), "orders.csv")
+            if os.path.exists(csv_path):
+                import pandas as pd
+                df_csv = pd.read_csv(csv_path, dtype=str, on_bad_lines="skip")
+                df_csv.columns = [col.strip() for col in df_csv.columns]
+                batch = []
+                for _, row in df_csv.iterrows():
+                    part_no = str(row.get("Part No", "") or "").strip()
+                    if not part_no:
+                        continue
+                    batch.append({
+                        "pn":   part_no,
+                        "desc": str(row.get("Part Desc", "") or "").strip(),
+                        "hsn":  str(row.get("HSN", "") or "").strip(),
+                        "mrp":  float(row.get("MRP", 0) or 0)
+                    })
+                    # Insert in batches of 500
+                    if len(batch) >= 500:
+                        for item in batch:
+                            db.execute(_text("""
+                                INSERT INTO order_items (part_no, description, hsn, mrp)
+                                VALUES (:pn, :desc, :hsn, :mrp)
+                            """), item)
+                        db.commit()
+                        batch = []
+                # Insert remaining
+                for item in batch:
+                    db.execute(_text("""
+                        INSERT INTO order_items (part_no, description, hsn, mrp)
+                        VALUES (:pn, :desc, :hsn, :mrp)
+                    """), item)
+                db.commit()
+                print(f"✅ Auto-imported orders.csv ({len(df_csv)} products into order_items)")
+            else:
+                print("⚠ orders.csv not found — skipping order_items import")
+
     except Exception as e:
         print(f"⚠ Auto-import skipped: {e}")
+        import traceback; traceback.print_exc()
     finally:
         db.close()
 
@@ -573,6 +616,44 @@ def get_rate(part_no: str):
 
 
 # ---------------- PRICE MASTER (orders.csv) ----------------
+
+@app.get("/reimport_orders")
+def reimport_orders():
+    """Admin: reload all products from orders.csv into order_items"""
+    db = SessionLocal()
+    try:
+        csv_path = os.path.join(os.path.dirname(__file__), "orders.csv")
+        if not os.path.exists(csv_path):
+            return {"error": "orders.csv not found"}
+        df = pd.read_csv(csv_path, dtype=str, on_bad_lines="skip")
+        df.columns = [col.strip() for col in df.columns]
+        db.execute(text("DELETE FROM order_items"))
+        batch, inserted = [], 0
+        for _, row in df.iterrows():
+            part_no = str(row.get("Part No", "") or "").strip()
+            if not part_no:
+                continue
+            batch.append({
+                "pn":   part_no,
+                "desc": str(row.get("Part Desc", "") or "").strip(),
+                "hsn":  str(row.get("HSN", "") or "").strip(),
+                "mrp":  float(row.get("MRP", 0) or 0)
+            })
+            if len(batch) >= 500:
+                for item in batch:
+                    db.execute(text("INSERT INTO order_items (part_no, description, hsn, mrp) VALUES (:pn, :desc, :hsn, :mrp)"), item)
+                db.commit()
+                inserted += len(batch)
+                batch = []
+        for item in batch:
+            db.execute(text("INSERT INTO order_items (part_no, description, hsn, mrp) VALUES (:pn, :desc, :hsn, :mrp)"), item)
+        db.commit()
+        inserted += len(batch)
+        return {"ok": True, "imported": inserted}
+    except Exception as e:
+        return {"error": str(e)}
+    finally:
+        db.close()
 
 @app.get("/search_parts")
 def search_parts(q: str = ""):
