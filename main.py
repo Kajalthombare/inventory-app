@@ -141,8 +141,29 @@ class OrderItems(Base):
     part_no = Column(String(100))
     description = Column(String(255))
     hsn = Column(String(50))
-    mrp = Column(Float)   
-  
+    mrp = Column(Float)
+
+class Quotation(Base):
+    __tablename__ = "quotations"
+    id = Column(Integer, primary_key=True)
+    quotation_no = Column(String(50))
+    customer_name = Column(String(255), default="")
+    date = Column(DateTime, default=datetime.utcnow)
+    total_amount = Column(Float, default=0.0)
+    grand_total = Column(Float, default=0.0)
+
+class QuotationItem(Base):
+    __tablename__ = "quotation_items"
+    id = Column(Integer, primary_key=True)
+    quotation_id = Column(Integer)
+    part_no = Column(String(100))
+    description = Column(String(255))
+    rate = Column(Float)
+    qty = Column(Integer)
+    discount = Column(Float)
+    amount = Column(Float)
+    hsn = Column(String(50), default="")
+
 Base.metadata.create_all(bind=engine)
 
 def format_inr(amount):
@@ -551,9 +572,205 @@ def get_rate(part_no: str):
     return {"rate": rate, "description": description, "hsn": hsn, "stock": stock}
 
 
-# ---------------- DOWNLOAD QUOTATION ----------------
-from datetime import datetime
-from sqlalchemy import text
+# ---------------- PRICE MASTER (orders.csv) ----------------
+
+@app.get("/search_parts")
+def search_parts(q: str = ""):
+    """Autocomplete: search order_items by part_no or description"""
+    db = SessionLocal()
+    q = q.strip().upper()
+    results = db.execute(text("""
+        SELECT part_no, description, mrp, hsn
+        FROM order_items
+        WHERE UPPER(part_no) LIKE :q OR UPPER(description) LIKE :q
+        LIMIT 20
+    """), {"q": f"%{q}%"}).fetchall()
+    db.close()
+    return [{"part_no": r.part_no, "description": r.description,
+             "rate": float(r.mrp or 0), "hsn": str(r.hsn or "")} for r in results]
+
+@app.get("/price_master")
+def price_master_list(page: int = 1, q: str = ""):
+    """List all products in order_items (price master) with pagination"""
+    db = SessionLocal()
+    per_page = 100
+    offset = (page - 1) * per_page
+    q_clean = f"%{q.strip().upper()}%"
+    rows = db.execute(text("""
+        SELECT id, part_no, description, hsn, mrp
+        FROM order_items
+        WHERE UPPER(part_no) LIKE :q OR UPPER(description) LIKE :q
+        ORDER BY part_no
+        LIMIT :lim OFFSET :off
+    """), {"q": q_clean, "lim": per_page, "off": offset}).fetchall()
+    total = db.execute(text("""
+        SELECT COUNT(*) FROM order_items
+        WHERE UPPER(part_no) LIKE :q OR UPPER(description) LIKE :q
+    """), {"q": q_clean}).scalar()
+    db.close()
+    return {"total": total, "page": page, "per_page": per_page,
+            "items": [{"id": r.id, "part_no": r.part_no, "description": r.description,
+                       "hsn": r.hsn, "mrp": float(r.mrp or 0)} for r in rows]}
+
+@app.post("/price_master/add")
+async def price_master_add(request: Request):
+    data = await request.json()
+    db = SessionLocal()
+    existing = db.query(OrderItems).filter(OrderItems.part_no == data["part_no"].strip()).first()
+    if existing:
+        db.close()
+        return {"error": "Part No already exists"}
+    item = OrderItems(
+        part_no=data["part_no"].strip(),
+        description=data.get("description", "").strip(),
+        hsn=data.get("hsn", "").strip(),
+        mrp=float(data.get("mrp", 0))
+    )
+    db.add(item)
+    db.commit()
+    db.close()
+    return {"ok": True}
+
+@app.post("/price_master/update/{item_id}")
+async def price_master_update(item_id: int, request: Request):
+    data = await request.json()
+    db = SessionLocal()
+    item = db.query(OrderItems).filter(OrderItems.id == item_id).first()
+    if item:
+        item.description = data.get("description", item.description)
+        item.hsn = data.get("hsn", item.hsn)
+        item.mrp = float(data.get("mrp", item.mrp))
+        db.commit()
+    db.close()
+    return {"ok": True}
+
+@app.post("/price_master/delete/{item_id}")
+def price_master_delete(item_id: int):
+    db = SessionLocal()
+    db.query(OrderItems).filter(OrderItems.id == item_id).delete()
+    db.commit()
+    db.close()
+    return {"ok": True}
+
+# ---------------- QUOTATION (no stock change) ----------------
+
+def generate_quotation_no(db):
+    import calendar
+    today = datetime.now()
+    year_month = today.strftime("%Y-%m")
+    first_day = today.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    last_day_num = calendar.monthrange(today.year, today.month)[1]
+    last_day = today.replace(day=last_day_num, hour=23, minute=59, second=59, microsecond=999999)
+    count = db.execute(text("""
+        SELECT COUNT(*) FROM quotations WHERE date >= :fd AND date <= :ld
+    """), {"fd": first_day, "ld": last_day}).scalar()
+    return f"QT-{year_month}-{str(count+1).zfill(3)}"
+
+@app.post("/save_quotation")
+async def save_quotation(request: Request):
+    """Save quotation to DB — NO stock change, NO sales report impact"""
+    data = await request.json()
+    db = SessionLocal()
+    rows = data.get("rows", [])
+    customer_name = data.get("customer_name", "")
+    if not rows:
+        return {"error": "No products"}
+    total_amount = sum(r["rate"] * r["qty"] * (1 - r.get("discount", 0)/100) for r in rows)
+    grand_total = total_amount * 1.18
+    q_no = generate_quotation_no(db)
+    quot = Quotation(
+        quotation_no=q_no,
+        customer_name=customer_name,
+        date=datetime.now(),
+        total_amount=round(total_amount, 2),
+        grand_total=round(grand_total, 2)
+    )
+    db.add(quot)
+    db.flush()
+    for r in rows:
+        sub = r["rate"] * r["qty"] * (1 - r.get("discount", 0)/100)
+        db.add(QuotationItem(
+            quotation_id=quot.id,
+            part_no=r.get("part_no", ""),
+            description=r.get("description", ""),
+            rate=r["rate"],
+            qty=r["qty"],
+            discount=r.get("discount", 0),
+            amount=round(sub, 2),
+            hsn=r.get("hsn", "")
+        ))
+    db.commit()
+    db.close()
+    return {"ok": True, "quotation_no": q_no}
+
+@app.get("/quotations")
+def list_quotations():
+    db = SessionLocal()
+    rows = db.execute(text("""
+        SELECT id, quotation_no, customer_name, date, grand_total
+        FROM quotations ORDER BY id DESC LIMIT 50
+    """)).fetchall()
+    db.close()
+    return [{"id": r.id, "quotation_no": r.quotation_no,
+             "customer_name": r.customer_name,
+             "date": str(r.date)[:10],
+             "grand_total": float(r.grand_total or 0)} for r in rows]
+
+@app.post("/download_quotation_pdf")
+async def download_quotation_pdf(request: Request):
+    """Generate quotation PDF HTML — NO stock change"""
+    data = await request.json()
+    rows = data.get("rows", [])
+    customer_name = data.get("customer_name", "")
+    items, total = [], 0
+    for r in rows:
+        sub = r["rate"] * r["qty"]
+        disc = sub * (r.get("discount", 0) / 100)
+        after = sub - disc
+        gst_amt = after * 0.18
+        final = after + gst_amt
+        total += final
+        items.append({
+            "part_no": r.get("part_no", ""), "description": r.get("description", ""),
+            "hsn": r.get("hsn", ""), "rate": r["rate"], "qty": r["qty"],
+            "discount": r.get("discount", 0), "gst": 18,
+            "amount": round(after, 2), "gst_amount": round(gst_amt, 2), "final": round(final, 2)
+        })
+    date_str = datetime.now().strftime("%d-%b-%Y")
+    html = f"""<!DOCTYPE html><html><head><meta charset='UTF-8'>
+<title>Quotation</title>
+<style>
+  body{{font-family:Arial,sans-serif;margin:30px;font-size:12px;}}
+  h2{{text-align:center;color:#1e40af;}} .subtitle{{text-align:center;color:#64748b;margin-bottom:20px;}}
+  table{{width:100%;border-collapse:collapse;margin-top:10px;}}
+  th{{background:#1e40af;color:#fff;padding:8px;text-align:left;}}
+  td{{padding:6px 8px;border-bottom:1px solid #e2e8f0;}}
+  tr:nth-child(even){{background:#f8fafc;}}
+  .total-row{{font-weight:bold;background:#e0e7ff!important;}}
+  .info{{display:flex;justify-content:space-between;margin-bottom:12px;}}
+  .badge{{background:#dbeafe;color:#1e40af;padding:2px 8px;border-radius:4px;font-size:11px;}}
+  @media print{{button{{display:none}}}}
+</style></head><body>
+<h2>QUOTATION</h2>
+<div class='subtitle'>This is a quotation only — not a tax invoice</div>
+<div class='info'>
+  <div><b>To:</b> {customer_name or '—'}</div>
+  <div><b>Date:</b> {date_str} &nbsp; <span class='badge'>QUOTATION</span></div>
+</div>
+<table>
+<tr><th>#</th><th>Part No</th><th>Description</th><th>HSN</th><th>Rate(₹)</th><th>Qty</th><th>Disc%</th><th>Amount(₹)</th><th>GST(₹)</th><th>Total(₹)</th></tr>
+{''.join(f"<tr><td>{i+1}</td><td>{it['part_no']}</td><td>{it['description']}</td><td>{it['hsn']}</td><td>{it['rate']:.2f}</td><td>{it['qty']}</td><td>{it['discount']:.1f}%</td><td>{it['amount']:,.2f}</td><td>{it['gst_amount']:,.2f}</td><td>{it['final']:,.2f}</td></tr>" for i,it in enumerate(items))}
+<tr class='total-row'><td colspan='9' style='text-align:right'>Grand Total (incl. 18% GST)</td><td>₹ {total:,.2f}</td></tr>
+</table>
+<div style='margin-top:20px;font-size:11px;color:#64748b;'>
+  <b>Note:</b> Rates subject to change. GST @18% included. Valid for 30 days from date of quotation.
+</div>
+<br><button onclick='window.print()' style='background:#1e40af;color:#fff;border:none;padding:8px 20px;border-radius:6px;cursor:pointer;'>🖨️ Print / Save PDF</button>
+</body></html>"""
+    return HTMLResponse(content=html)
+
+# ----------------------------------------------------------------
+
 
 
 def generate_invoice_no(db):

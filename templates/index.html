@@ -538,12 +538,34 @@
         .grand-total-label { font-size: 14px; color: var(--text-muted); font-weight: 600; }
         .grand-total-value { font-size: 22px; font-weight: 800; color: var(--text); letter-spacing: -0.5px; }
 
-        /* ── DIVIDER ── */
         .section-divider {
             height: 1px;
             background: var(--border);
             margin: 20px 0;
         }
+
+        /* ── AUTOCOMPLETE ── */
+        .ac-list {
+            position: absolute;
+            top: 100%; left: 0;
+            width: 420px;
+            background: #fff;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            box-shadow: var(--shadow-md);
+            z-index: 999;
+            display: none;
+            max-height: 240px;
+            overflow-y: auto;
+        }
+        .ac-item {
+            padding: 8px 12px;
+            font-size: 12px;
+            cursor: pointer;
+            border-bottom: 1px solid var(--border);
+        }
+        .ac-item:hover { background: var(--primary-light); }
+        .ac-item:last-child { border-bottom: none; }
     </style>
 </head>
 <body>
@@ -563,8 +585,18 @@
         <a class="nav-item" href="#sales-section">
             <span class="nav-icon">📊</span> Sales Report
         </a>
+
+        <div class="nav-section-label" style="margin-top:8px;">Billing</div>
         <a class="nav-item" href="#quotation-section">
             <span class="nav-icon">📋</span> Quotation
+        </a>
+        <a class="nav-item" href="#invoice-section">
+            <span class="nav-icon">🧾</span> Raise Invoice
+        </a>
+
+        <div class="nav-section-label" style="margin-top:8px;">Master</div>
+        <a class="nav-item" href="#price-master-section">
+            <span class="nav-icon">📑</span> Price Master
         </a>
 
         <div class="nav-section-label" style="margin-top:8px;">Tools</div>
@@ -715,24 +747,31 @@
         </div>
 
         <!-- ── QUOTATION ── -->
+        <!-- ══ QUOTATION (no stock change) ══ -->
         <div class="section-card" id="quotation-section">
             <div class="section-header">
-                <div class="section-title">📋 Multi-Product Quotation</div>
+                <div class="section-title">📋 Quotation <span style="font-size:11px;font-weight:400;color:var(--text-muted);margin-left:8px;">— Does NOT affect stock or sales</span></div>
                 <div style="display:flex;gap:8px;">
-                    <button onclick="addRow()" class="btn btn-ghost btn-sm">+ Add Row</button>
-                    <button onclick="downloadQuotation()" class="btn btn-success btn-sm">Excel</button>
-                    <button onclick="downloadPDF()" class="btn btn-danger btn-sm">PDF Invoice</button>
+                    <button onclick="addQRow()" class="btn btn-ghost btn-sm">+ Add Row</button>
+                    <button onclick="downloadQuotationPDF()" class="btn btn-primary btn-sm">📄 Download PDF</button>
+                    <button onclick="saveQuotation()" class="btn btn-success btn-sm">💾 Save Quotation</button>
                 </div>
             </div>
             <div class="section-body">
+                <div class="form-row" style="margin-bottom:12px;">
+                    <div class="form-field" style="flex:1;">
+                        <label>Customer / Party Name</label>
+                        <input type="text" id="q_customer" class="form-input" placeholder="Enter customer name (optional)">
+                    </div>
+                </div>
                 <div class="table-wrap">
                     <table class="data-table" id="q_table">
                         <thead>
                             <tr>
                                 <th>Part No</th>
                                 <th>Description</th>
-                                <th>Stock</th>
-                                <th>Rate (₹)</th>
+                                <th>Selling Rate (₹)</th>
+                                <th>Stock (Info)</th>
                                 <th>Qty</th>
                                 <th>Discount %</th>
                                 <th>Total (₹)</th>
@@ -743,8 +782,86 @@
                     </table>
                 </div>
                 <div class="grand-total-row">
-                    <span class="grand-total-label">Grand Total</span>
-                    <span class="grand-total-value">₹ <span id="grand_total">0.00</span></span>
+                    <span class="grand-total-label">Grand Total (incl. 18% GST)</span>
+                    <span class="grand-total-value">₹ <span id="q_grand_total">0.00</span></span>
+                </div>
+                <!-- Saved quotations list -->
+                <div id="quotation-list-wrap" style="margin-top:20px;">
+                    <div style="font-size:13px;font-weight:600;margin-bottom:8px;color:var(--text-muted);">Recent Quotations</div>
+                    <div id="quotation-list"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ══ RAISE INVOICE (stock deducted) ══ -->
+        <div class="section-card" id="invoice-section">
+            <div class="section-header">
+                <div class="section-title">🧾 Raise Invoice <span style="font-size:11px;font-weight:400;color:var(--danger);margin-left:8px;">— Deducts stock & updates sales</span></div>
+                <div style="display:flex;gap:8px;">
+                    <button onclick="addInvRow()" class="btn btn-ghost btn-sm">+ Add Row</button>
+                    <button onclick="raiseInvoice()" class="btn btn-danger btn-sm">🧾 Raise Invoice (PDF)</button>
+                </div>
+            </div>
+            <div class="section-body">
+                <div class="table-wrap">
+                    <table class="data-table" id="inv_table">
+                        <thead>
+                            <tr>
+                                <th>Part No</th>
+                                <th>Description</th>
+                                <th>Selling Rate (₹)</th>
+                                <th>Stock</th>
+                                <th>Qty</th>
+                                <th>Discount %</th>
+                                <th>Total (₹)</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody id="inv_body"></tbody>
+                    </table>
+                </div>
+                <div class="grand-total-row">
+                    <span class="grand-total-label">Grand Total (incl. 18% GST)</span>
+                    <span class="grand-total-value">₹ <span id="inv_grand_total">0.00</span></span>
+                </div>
+            </div>
+        </div>
+
+        <!-- ══ PRICE MASTER ══ -->
+        <div class="section-card" id="price-master-section">
+            <div class="section-header">
+                <div class="section-title">📑 Price Master <span style="font-size:11px;font-weight:400;color:var(--text-muted);margin-left:8px;">— Selling rates from orders.csv</span></div>
+                <button onclick="showAddPMForm()" class="btn btn-primary btn-sm">+ Add Product</button>
+            </div>
+            <div class="section-body">
+                <!-- Add form (hidden by default) -->
+                <div id="pm-add-form" style="display:none;background:var(--bg);padding:14px;border-radius:8px;margin-bottom:14px;">
+                    <div class="form-row">
+                        <div class="form-field"><label>Part No</label><input id="pm-pno" class="form-input" placeholder="Part No"></div>
+                        <div class="form-field" style="flex:2"><label>Description</label><input id="pm-desc" class="form-input" placeholder="Description"></div>
+                        <div class="form-field"><label>HSN</label><input id="pm-hsn" class="form-input" placeholder="HSN"></div>
+                        <div class="form-field"><label>Selling Rate (₹)</label><input id="pm-mrp" type="number" class="form-input" placeholder="0.00"></div>
+                        <div class="form-field" style="justify-content:flex-end;">
+                            <button onclick="addPMProduct()" class="btn btn-success">Save</button>
+                            <button onclick="hidePMForm()" class="btn btn-ghost" style="margin-left:4px;">Cancel</button>
+                        </div>
+                    </div>
+                </div>
+                <!-- Search -->
+                <div class="form-row" style="margin-bottom:12px;">
+                    <input type="text" id="pm-search" class="form-input" placeholder="Search Part No or Description…" oninput="loadPriceMaster()" style="max-width:360px;">
+                    <span id="pm-total-count" style="font-size:12px;color:var(--text-muted);align-self:center;"></span>
+                </div>
+                <div class="table-wrap">
+                    <table class="data-table">
+                        <thead><tr><th>Part No</th><th>Description</th><th>HSN</th><th>Selling Rate (₹)</th><th>Actions</th></tr></thead>
+                        <tbody id="pm-body"></tbody>
+                    </table>
+                </div>
+                <div style="display:flex;gap:8px;margin-top:12px;align-items:center;">
+                    <button onclick="pmPrevPage()" class="btn btn-ghost btn-sm">← Prev</button>
+                    <span id="pm-page-info" style="font-size:12px;color:var(--text-muted);"></span>
+                    <button onclick="pmNextPage()" class="btn btn-ghost btn-sm">Next →</button>
                 </div>
             </div>
         </div>
@@ -777,7 +894,7 @@
                             <th>HSN</th>
                             <th>GST %</th>
                             <th>Qty</th>
-                            <th>Rate (₹)</th>
+                            <th>Purchase Rate (₹)</th>
                             <th>Disc %</th>
                             <th>Amount (₹)</th>
                             <th>Actions</th>
@@ -920,8 +1037,266 @@ function exportExcel(){
     window.open(`/export_excel?start_date=${s}&end_date=${e}`);
 }
 
-// ── Quotation rows ──
-let rows = [];
+// ══════════════════════════════════════════
+// AUTOCOMPLETE HELPER (shared)
+// ══════════════════════════════════════════
+let acTimer = null;
+async function acSearch(inputEl, listEl, onSelect) {
+    clearTimeout(acTimer);
+    const q = inputEl.value.trim();
+    if (q.length < 2) { listEl.style.display='none'; return; }
+    acTimer = setTimeout(async () => {
+        const res = await fetch(`/search_parts?q=${encodeURIComponent(q)}`);
+        const data = await res.json();
+        if (!data.length) { listEl.style.display='none'; return; }
+        listEl.innerHTML = data.map(d =>
+            `<div class="ac-item" onclick="acPick(this)" data-pno="${d.part_no}" data-desc="${d.description}" data-rate="${d.rate}" data-hsn="${d.hsn}" data-stock="">
+                <strong>${d.part_no}</strong> — ${d.description} &nbsp;<span style="color:#2563eb;">₹${d.rate.toFixed(2)}</span>
+            </div>`
+        ).join('');
+        listEl._onSelect = onSelect;
+        listEl.style.display = 'block';
+    }, 250);
+}
+function acPick(el) {
+    const list = el.parentElement;
+    list._onSelect({ part_no: el.dataset.pno, description: el.dataset.desc, rate: parseFloat(el.dataset.rate), hsn: el.dataset.hsn });
+    list.style.display = 'none';
+}
+document.addEventListener('click', e => {
+    document.querySelectorAll('.ac-list').forEach(l => { if (!l.contains(e.target)) l.style.display='none'; });
+});
+
+// ══════════════════════════════════════════
+// QUOTATION TAB (NO stock change)
+// ══════════════════════════════════════════
+let qRows = [];
+
+function addQRow(){
+    qRows.push({ part_no:'', description:'', rate:0, qty:1, discount:0, stock:0, hsn:'' });
+    renderQRows();
+}
+
+function renderQRows(){
+    let html = '', grand = 0;
+    qRows.forEach((r, i) => {
+        const sub = r.rate * r.qty, disc = sub*(r.discount/100), after = sub-disc, total = after*1.18;
+        grand += total;
+        const stockBadge = r.part_no
+            ? (r.stock===0 ? `<span class="badge badge-warning">?</span>` : r.stock<5 ? `<span class="badge badge-warning">${r.stock}</span>` : `<span class="badge badge-success">${r.stock}</span>`)
+            : '—';
+        html += `<tr>
+            <td style="position:relative;">
+                <input id="q-inp-${i}" value="${r.part_no}" oninput="acSearch(this,document.getElementById('q-ac-${i}'),d=>{qRows[${i}].part_no=d.part_no;qRows[${i}].description=d.description;qRows[${i}].rate=d.rate;qRows[${i}].hsn=d.hsn;fetchQStock(${i});renderQRows();})" class="q-table-input" placeholder="Part No or search…">
+                <div id="q-ac-${i}" class="ac-list"></div>
+            </td>
+            <td style="color:var(--text-muted);font-size:12px;min-width:140px;">${r.description||'<span style="opacity:0.4;">—</span>'}</td>
+            <td style="font-weight:600;">₹ ${r.rate.toFixed(2)}</td>
+            <td>${stockBadge}</td>
+            <td><input type="number" value="${r.qty}" min="1" onchange="qRows[${i}].qty=parseFloat(this.value)||1;renderQRows()" class="q-table-input" style="width:70px;"></td>
+            <td><input type="number" value="${r.discount}" min="0" max="100" onchange="qRows[${i}].discount=parseFloat(this.value)||0;renderQRows()" class="q-table-input" style="width:65px;"></td>
+            <td style="font-weight:700;color:var(--primary);">₹ ${total.toFixed(2)}</td>
+            <td><button onclick="qRows.splice(${i},1);renderQRows()" class="btn btn-ghost btn-sm">✕</button></td>
+        </tr>`;
+    });
+    document.getElementById('q_body').innerHTML = html;
+    document.getElementById('q_grand_total').textContent = grand.toFixed(2);
+}
+
+async function fetchQStock(i){
+    if (!qRows[i].part_no) return;
+    const d = await (await fetch(`/get_rate/${encodeURIComponent(qRows[i].part_no)}`)).json();
+    qRows[i].stock = d.stock || 0;
+    renderQRows();
+}
+
+async function downloadQuotationPDF(){
+    if (!qRows.filter(r=>r.part_no).length){ alert('Add at least one product'); return; }
+    const customer = document.getElementById('q_customer').value;
+    const res = await fetch('/download_quotation_pdf',{method:'POST',headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({rows: qRows.filter(r=>r.part_no), customer_name: customer})});
+    const html = await res.text();
+    const w = window.open(); w.document.open(); w.document.write(html); w.document.close();
+}
+
+async function saveQuotation(){
+    const filtered = qRows.filter(r=>r.part_no && r.rate>0);
+    if (!filtered.length){ alert('Add at least one product with a valid rate'); return; }
+    const customer = document.getElementById('q_customer').value;
+    const res = await fetch('/save_quotation',{method:'POST',headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({rows: filtered, customer_name: customer})});
+    const data = await res.json();
+    if (data.ok) {
+        alert(`✅ Quotation saved: ${data.quotation_no}`);
+        loadQuotationList();
+    } else { alert('Error: ' + (data.error||'Unknown')); }
+}
+
+async function loadQuotationList(){
+    const res = await fetch('/quotations');
+    const data = await res.json();
+    if (!data.length){ document.getElementById('quotation-list').innerHTML='<div style="color:var(--text-muted);font-size:13px;">No quotations yet</div>'; return; }
+    document.getElementById('quotation-list').innerHTML = `<table class="data-table" style="font-size:12px;">
+        <thead><tr><th>Quotation No</th><th>Customer</th><th>Date</th><th>Grand Total (₹)</th></tr></thead>
+        <tbody>${data.map(q=>`<tr><td style="font-weight:600;">${q.quotation_no}</td><td>${q.customer_name||'—'}</td><td>${q.date}</td><td>₹ ${q.grand_total.toLocaleString('en-IN',{minimumFractionDigits:2})}</td></tr>`).join('')}</tbody>
+    </table>`;
+}
+
+addQRow();
+loadQuotationList();
+
+// ══════════════════════════════════════════
+// INVOICE TAB (deducts stock + sales report)
+// ══════════════════════════════════════════
+let invRows = [];
+
+function addInvRow(){
+    invRows.push({ part_no:'', description:'', rate:0, qty:1, discount:0, stock:0, hsn:'' });
+    renderInvRows();
+}
+
+function renderInvRows(){
+    let html = '', grand = 0;
+    invRows.forEach((r, i) => {
+        const sub = r.rate * r.qty, disc = sub*(r.discount/100), after = sub-disc, total = after*1.18;
+        grand += total;
+        const stockBadge = r.part_no
+            ? (r.stock===0 ? `<span class="badge badge-danger">Out of Stock</span>` : r.stock<5 ? `<span class="badge badge-warning">${r.stock} left</span>` : `<span class="badge badge-success">${r.stock} avail</span>`)
+            : '—';
+        html += `<tr>
+            <td style="position:relative;">
+                <input id="inv-inp-${i}" value="${r.part_no}" oninput="acSearch(this,document.getElementById('inv-ac-${i}'),d=>{invRows[${i}].part_no=d.part_no;invRows[${i}].description=d.description;invRows[${i}].rate=d.rate;invRows[${i}].hsn=d.hsn;fetchInvStock(${i});renderInvRows();})" class="q-table-input" placeholder="Part No or search…">
+                <div id="inv-ac-${i}" class="ac-list"></div>
+            </td>
+            <td style="color:var(--text-muted);font-size:12px;min-width:140px;">${r.description||'<span style="opacity:0.4;">—</span>'}</td>
+            <td style="font-weight:600;">₹ ${r.rate.toFixed(2)}</td>
+            <td>${stockBadge}</td>
+            <td><input type="number" value="${r.qty}" min="1" max="${r.stock||9999}" onchange="invRows[${i}].qty=Math.min(parseFloat(this.value)||1,${r.stock||9999});renderInvRows()" class="q-table-input" style="width:70px;"></td>
+            <td><input type="number" value="${r.discount}" min="0" max="100" onchange="invRows[${i}].discount=parseFloat(this.value)||0;renderInvRows()" class="q-table-input" style="width:65px;"></td>
+            <td style="font-weight:700;color:var(--danger);">₹ ${total.toFixed(2)}</td>
+            <td><button onclick="invRows.splice(${i},1);renderInvRows()" class="btn btn-ghost btn-sm">✕</button></td>
+        </tr>`;
+    });
+    document.getElementById('inv_body').innerHTML = html;
+    document.getElementById('inv_grand_total').textContent = grand.toFixed(2);
+}
+
+async function fetchInvStock(i){
+    if (!invRows[i].part_no) return;
+    const d = await (await fetch(`/get_rate/${encodeURIComponent(invRows[i].part_no)}`)).json();
+    invRows[i].stock = d.stock || 0;
+    // Cap qty to available stock
+    if (invRows[i].qty > invRows[i].stock && invRows[i].stock > 0) invRows[i].qty = invRows[i].stock;
+    renderInvRows();
+}
+
+async function raiseInvoice(){
+    const filtered = invRows.filter(r=>r.part_no && r.qty>0);
+    if (!filtered.length){ alert('Add at least one product'); return; }
+    const outOfStock = filtered.filter(r=>r.stock===0);
+    if (outOfStock.length){ alert('Some items are out of stock: ' + outOfStock.map(r=>r.part_no).join(', ')); return; }
+    const res = await fetch('/download_pdf',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(filtered)});
+    if (!res.ok) { const e = await res.text(); alert('Error: ' + e); return; }
+    const html = await res.text();
+    const w = window.open(); w.document.open(); w.document.write(html); w.document.close();
+    setTimeout(() => location.reload(), 800);
+}
+
+addInvRow();
+
+// ══════════════════════════════════════════
+// PRICE MASTER TAB
+// ══════════════════════════════════════════
+let pmPage = 1;
+
+async function loadPriceMaster(){
+    pmPage = 1; await fetchPM();
+}
+
+async function fetchPM(){
+    const q = document.getElementById('pm-search')?.value || '';
+    const res = await fetch(`/price_master?page=${pmPage}&q=${encodeURIComponent(q)}`);
+    const data = await res.json();
+    document.getElementById('pm-total-count').textContent = `${data.total.toLocaleString()} products`;
+    document.getElementById('pm-page-info').textContent = `Page ${data.page} of ${Math.ceil(data.total/data.per_page)}`;
+    document.getElementById('pm-body').innerHTML = data.items.map(it =>
+        `<tr id="pm-row-${it.id}">
+            <td style="font-weight:600;">${it.part_no}</td>
+            <td>${it.description||'—'}</td>
+            <td>${it.hsn||'—'}</td>
+            <td id="pm-rate-${it.id}">₹ ${it.mrp.toFixed(2)}</td>
+            <td>
+                <button onclick="editPM(${it.id},'${it.description?.replace(/'/g,"\\'")}','${it.hsn||''}',${it.mrp})" class="btn btn-ghost btn-sm">✏️ Edit</button>
+                <button onclick="deletePM(${it.id})" class="btn btn-ghost btn-sm" style="color:var(--danger);">🗑</button>
+            </td>
+        </tr>`
+    ).join('');
+}
+
+function pmPrevPage(){ if(pmPage>1){ pmPage--; fetchPM(); } }
+function pmNextPage(){ pmPage++; fetchPM(); }
+
+function showAddPMForm(){ document.getElementById('pm-add-form').style.display='block'; }
+function hidePMForm(){
+    document.getElementById('pm-add-form').style.display='none';
+    ['pm-pno','pm-desc','pm-hsn','pm-mrp'].forEach(id=>document.getElementById(id).value='');
+}
+
+async function addPMProduct(){
+    const pno = document.getElementById('pm-pno').value.trim();
+    const desc = document.getElementById('pm-desc').value.trim();
+    const hsn = document.getElementById('pm-hsn').value.trim();
+    const mrp = parseFloat(document.getElementById('pm-mrp').value)||0;
+    if (!pno){ alert('Part No is required'); return; }
+    const res = await fetch('/price_master/add',{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({part_no:pno,description:desc,hsn:hsn,mrp:mrp})});
+    const data = await res.json();
+    if (data.error){ alert(data.error); return; }
+    hidePMForm(); await fetchPM();
+}
+
+async function editPM(id, desc, hsn, mrp){
+    const newDesc = prompt('Description:', desc);
+    if (newDesc===null) return;
+    const newMRP = parseFloat(prompt('Selling Rate (₹):', mrp));
+    if (isNaN(newMRP)) return;
+    const newHSN = prompt('HSN:', hsn)||hsn;
+    await fetch(`/price_master/update/${id}`,{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({description:newDesc,hsn:newHSN,mrp:newMRP})});
+    await fetchPM();
+}
+
+async function deletePM(id){
+    if (!confirm('Delete this product from Price Master?')) return;
+    await fetch(`/price_master/delete/${id}`,{method:'POST'});
+    await fetchPM();
+}
+
+// Load price master on page load
+loadPriceMaster();
+
+// ── Export Excel ──
+function exportExcel(){
+    const s = document.getElementById('start_date').value;
+    const e = document.getElementById('end_date').value;
+    if (!s || !e) { alert('Select dates first'); return; }
+    window.open(`/export_excel?start_date=${s}&end_date=${e}`);
+}
+
+// ── Upload order ──
+async function uploadOrder(){
+    const formData = new FormData(document.getElementById('orderForm'));
+    await fetch('/upload_order',{method:'POST',body:formData});
+    alert('Order uploaded successfully!');
+}
+
+// ── Reload helper ──
+function reloadPage(){
+    setTimeout(() => location.reload(), 300);
+    return true;
+}
+</script>
+
 function addRow(){
     rows.push({ part_no:'', description:'', rate:0, qty:1, discount:0, stock:0 });
     renderRows();
