@@ -887,6 +887,7 @@ async def download_pdf(request: Request):
         if isinstance(data, dict):  # still not right, fall back
             data = [payload] if "part_no" in payload else []
     db = SessionLocal()
+    from collections import defaultdict
 
     try:
         # ===============================
