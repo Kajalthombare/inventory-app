@@ -64,14 +64,19 @@ def auto_import_inventory():
                 db.commit()
                 print(f"✅ Auto-imported inventory.xlsx ({len(df)} products)")
 
-        # ── 2. Import orders.csv → order_items table (selling rates) ──
-        oi_count = db.execute(_text("SELECT COUNT(*) FROM order_items")).scalar()
-        if oi_count == 0:
-            csv_path = os.path.join(os.path.dirname(__file__), "orders.csv")
-            if os.path.exists(csv_path):
-                import pandas as pd
-                df_csv = pd.read_csv(csv_path, dtype=str, on_bad_lines="skip")
-                df_csv.columns = [col.strip() for col in df_csv.columns]
+        # ── 2. Sync orders.csv → order_items table (always refresh on startup) ──
+        csv_path = os.path.join(os.path.dirname(__file__), "orders.csv")
+        if os.path.exists(csv_path):
+            oi_count = db.execute(_text("SELECT COUNT(*) FROM order_items")).scalar()
+            import pandas as pd
+            df_csv = pd.read_csv(csv_path, dtype=str, on_bad_lines="skip")
+            df_csv.columns = [col.strip() for col in df_csv.columns]
+            csv_count = len(df_csv)
+            # Only reimport if DB is out of sync with CSV (allows Render cold starts)
+            if oi_count < csv_count * 0.9:  # reimport if DB has <90% of CSV rows
+                print(f"⏳ Syncing orders.csv ({csv_count} rows) into order_items ({oi_count} in DB)...")
+                db.execute(_text("DELETE FROM order_items"))
+                db.commit()
                 batch = []
                 for _, row in df_csv.iterrows():
                     part_no = str(row.get("Part No", "") or "").strip()
@@ -83,7 +88,6 @@ def auto_import_inventory():
                         "hsn":  str(row.get("HSN", "") or "").strip(),
                         "mrp":  float(row.get("MRP", 0) or 0)
                     })
-                    # Insert in batches of 500
                     if len(batch) >= 500:
                         for item in batch:
                             db.execute(_text("""
@@ -92,16 +96,17 @@ def auto_import_inventory():
                             """), item)
                         db.commit()
                         batch = []
-                # Insert remaining
                 for item in batch:
                     db.execute(_text("""
                         INSERT INTO order_items (part_no, description, hsn, mrp)
                         VALUES (:pn, :desc, :hsn, :mrp)
                     """), item)
                 db.commit()
-                print(f"✅ Auto-imported orders.csv ({len(df_csv)} products into order_items)")
+                print(f"✅ Synced orders.csv ({csv_count} products into order_items)")
             else:
-                print("⚠ orders.csv not found — skipping order_items import")
+                print(f"✅ order_items up to date ({oi_count} rows)")
+        else:
+            print("⚠ orders.csv not found — skipping order_items sync")
 
     except Exception as e:
         print(f"⚠ Auto-import skipped: {e}")
