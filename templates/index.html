@@ -758,10 +758,18 @@
                 </div>
             </div>
             <div class="section-body">
-                <div class="form-row" style="margin-bottom:12px;">
-                    <div class="form-field" style="flex:1;">
+                <div class="form-row" style="margin-bottom:12px; gap:12px;">
+                    <div class="form-field" style="flex:2;">
                         <label>Customer / Party Name</label>
                         <input type="text" id="q_customer" class="form-input" placeholder="Enter customer name (optional)">
+                    </div>
+                    <div class="form-field" style="flex:2;">
+                        <label>Address</label>
+                        <input type="text" id="q_customer_address" class="form-input" placeholder="Enter address (optional)">
+                    </div>
+                    <div class="form-field" style="flex:1;">
+                        <label>GSTIN Number</label>
+                        <input type="text" id="q_customer_gstin" class="form-input" placeholder="Enter GSTIN (optional)">
                     </div>
                 </div>
                 <div class="table-wrap">
@@ -803,10 +811,18 @@
                 </div>
             </div>
             <div class="section-body">
-                <div class="form-row" style="margin-bottom:12px;">
-                    <div class="form-field" style="flex:1;">
+                <div class="form-row" style="margin-bottom:12px; gap:12px;">
+                    <div class="form-field" style="flex:2;">
                         <label>Customer / Party Name</label>
                         <input type="text" id="inv_customer" class="form-input" placeholder="Enter customer name">
+                    </div>
+                    <div class="form-field" style="flex:2;">
+                        <label>Address</label>
+                        <input type="text" id="inv_customer_address" class="form-input" placeholder="Enter address (optional)">
+                    </div>
+                    <div class="form-field" style="flex:1;">
+                        <label>GSTIN Number</label>
+                        <input type="text" id="inv_customer_gstin" class="form-input" placeholder="Enter GSTIN (optional)">
                     </div>
                 </div>
                 <div class="table-wrap">
@@ -1129,8 +1145,10 @@ async function fetchQStock(i){
 async function downloadQuotationPDF(){
     if (!qRows.filter(r=>r.part_no).length){ alert('Add at least one product'); return; }
     const customer = document.getElementById('q_customer').value;
+    const address = document.getElementById('q_customer_address').value;
+    const gstin = document.getElementById('q_customer_gstin').value;
     const res = await fetch('/download_quotation_pdf',{method:'POST',headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({rows: qRows.filter(r=>r.part_no), customer_name: customer})});
+        body: JSON.stringify({rows: qRows.filter(r=>r.part_no), customer_name: customer, customer_address: address, customer_gstin: gstin})});
     const html = await res.text();
     const w = window.open(); w.document.open(); w.document.write(html); w.document.close();
 }
@@ -1139,8 +1157,10 @@ async function saveQuotation(){
     const filtered = qRows.filter(r=>r.part_no && r.rate>0);
     if (!filtered.length){ alert('Add at least one product with a valid rate'); return; }
     const customer = document.getElementById('q_customer').value;
+    const address = document.getElementById('q_customer_address').value;
+    const gstin = document.getElementById('q_customer_gstin').value;
     const res = await fetch('/save_quotation',{method:'POST',headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({rows: filtered, customer_name: customer})});
+        body: JSON.stringify({rows: filtered, customer_name: customer, customer_address: address, customer_gstin: gstin})});
     const data = await res.json();
     if (data.ok) {
         alert(`✅ Quotation saved: ${data.quotation_no}`);
@@ -1219,7 +1239,9 @@ async function raiseInvoice(){
     const outOfStock = filtered.filter(r=>r.stock===0 && r.part_no);
     if (outOfStock.length){ alert('Out of stock: ' + outOfStock.map(r=>r.part_no).join(', ')); return; }
     const customer = (document.getElementById('inv_customer')?.value || '').trim();
-    const payload = { rows: filtered, customer_name: customer };
+    const address = (document.getElementById('inv_customer_address')?.value || '').trim();
+    const gstin = (document.getElementById('inv_customer_gstin')?.value || '').trim();
+    const payload = { rows: filtered, customer_name: customer, customer_address: address, customer_gstin: gstin };
     const res = await fetch('/download_pdf',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
     if (!res.ok) { const e = await res.text(); alert('Error: ' + e); return; }
     const html = await res.text();

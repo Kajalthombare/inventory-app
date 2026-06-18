@@ -148,6 +148,7 @@ tr:nth-child(even) {
     <strong>Bill To:</strong><br>
     <b>{{ buyer_name }}</b>
     {% if buyer_address %}<br>{{ buyer_address }}{% endif %}
+    {% if buyer_gstin %}<br>GSTIN: {{ buyer_gstin }}{% endif %}
 </div>
 
 <!-- TABLE -->

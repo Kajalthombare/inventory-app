@@ -37,6 +37,15 @@ def auto_import_inventory():
     try:
         from sqlalchemy import text as _text
 
+        # ── 0. Run auto-migrations for invoices & quotations ──
+        for table in ["invoices", "quotations"]:
+            for col, col_type in [("customer_address", "VARCHAR(255)"), ("customer_gstin", "VARCHAR(50)")]:
+                try:
+                    db.execute(_text(f"ALTER TABLE {table} ADD COLUMN {col} {col_type}"))
+                    db.commit()
+                except Exception:
+                    db.rollback()
+
         # ── 1. Import inventory.xlsx → products table ──
         count = db.execute(_text("SELECT COUNT(*) FROM products")).scalar()
         if count == 0:
@@ -162,6 +171,8 @@ class Invoice(Base):
     id = Column(Integer, primary_key=True)
     invoice_no = Column(String(50), unique=True)
     customer_name = Column(String(255))
+    customer_address = Column(String(255), nullable=True)
+    customer_gstin = Column(String(50), nullable=True)
     date = Column(DateTime, default=datetime.utcnow)
 
     total_amount = Column(Float)
@@ -207,6 +218,8 @@ class Quotation(Base):
     id = Column(Integer, primary_key=True)
     quotation_no = Column(String(50))
     customer_name = Column(String(255), default="")
+    customer_address = Column(String(255), default="")
+    customer_gstin = Column(String(50), default="")
     date = Column(DateTime, default=datetime.utcnow)
     total_amount = Column(Float, default=0.0)
     grand_total = Column(Float, default=0.0)
@@ -787,6 +800,8 @@ async def save_quotation(request: Request):
     db = SessionLocal()
     rows = data.get("rows", [])
     customer_name = data.get("customer_name", "")
+    customer_address = data.get("customer_address", "")
+    customer_gstin = data.get("customer_gstin", "")
     if not rows:
         return {"error": "No products"}
     total_amount = sum(r["rate"] * r["qty"] * (1 - r.get("discount", 0)/100) for r in rows)
@@ -795,6 +810,8 @@ async def save_quotation(request: Request):
     quot = Quotation(
         quotation_no=q_no,
         customer_name=customer_name,
+        customer_address=customer_address,
+        customer_gstin=customer_gstin,
         date=datetime.now(),
         total_amount=round(total_amount, 2),
         grand_total=round(grand_total, 2)
@@ -821,12 +838,14 @@ async def save_quotation(request: Request):
 def list_quotations():
     db = SessionLocal()
     rows = db.execute(text("""
-        SELECT id, quotation_no, customer_name, date, grand_total
+        SELECT id, quotation_no, customer_name, customer_address, customer_gstin, date, grand_total
         FROM quotations ORDER BY id DESC LIMIT 50
     """)).fetchall()
     db.close()
     return [{"id": r.id, "quotation_no": r.quotation_no,
              "customer_name": r.customer_name,
+             "customer_address": r.customer_address,
+             "customer_gstin": r.customer_gstin,
              "date": str(r.date)[:10],
              "grand_total": float(r.grand_total or 0)} for r in rows]
 
@@ -836,6 +855,8 @@ async def download_quotation_pdf(request: Request):
     data = await request.json()
     rows = data.get("rows", [])
     customer_name = data.get("customer_name", "")
+    customer_address = data.get("customer_address", "")
+    customer_gstin = data.get("customer_gstin", "")
     items, total = [], 0
     for r in rows:
         sub = r["rate"] * r["qty"]
@@ -868,7 +889,11 @@ async def download_quotation_pdf(request: Request):
 <h2>QUOTATION</h2>
 <div class='subtitle'>This is a quotation only — not a tax invoice</div>
 <div class='info'>
-  <div><b>To:</b> {customer_name or '—'}</div>
+  <div>
+    <b>To:</b> {customer_name or '—'}<br>
+    {f"<b>Address:</b> {customer_address}<br>" if customer_address else ""}
+    {f"<b>GSTIN:</b> {customer_gstin}<br>" if customer_gstin else ""}
+  </div>
   <div><b>Date:</b> {date_str} &nbsp; <span class='badge'>QUOTATION</span></div>
 </div>
 <table>
@@ -914,9 +939,13 @@ async def download_pdf(request: Request):
     if isinstance(payload, list):
         data = payload
         customer_name = "Walk-In Customer"
+        customer_address = ""
+        customer_gstin = ""
     else:
         data = payload.get("rows", payload) if isinstance(payload.get("rows"), list) else payload
         customer_name = payload.get("customer_name", "").strip() or "Walk-In Customer"
+        customer_address = payload.get("customer_address", "").strip() or ""
+        customer_gstin = payload.get("customer_gstin", "").strip() or ""
         if isinstance(data, dict):  # still not right, fall back
             data = [payload] if "part_no" in payload else []
     db = SessionLocal()
@@ -1017,14 +1046,15 @@ async def download_pdf(request: Request):
         if is_postgres:
             result = db.execute(text("""
                 INSERT INTO invoices (
-                    invoice_no, customer_name, date,
+                    invoice_no, customer_name, customer_address, customer_gstin, date,
                     total_amount, gst_amount, grand_total
                 ) VALUES (
-                    :inv, :cust, :date,
+                    :inv, :cust, :address, :gstin, :date,
                     :total, :gst, :grand
                 ) RETURNING id
             """), {
                 "inv": invoice_no, "cust": customer_name,
+                "address": customer_address, "gstin": customer_gstin,
                 "date": datetime.utcnow(),
                 "total": round(subtotal, 2),
                 "gst": cgst + sgst, "grand": total
@@ -1033,14 +1063,15 @@ async def download_pdf(request: Request):
         else:
             result = db.execute(text("""
                 INSERT INTO invoices (
-                    invoice_no, customer_name, date,
+                    invoice_no, customer_name, customer_address, customer_gstin, date,
                     total_amount, gst_amount, grand_total
                 ) VALUES (
-                    :inv, :cust, :date,
+                    :inv, :cust, :address, :gstin, :date,
                     :total, :gst, :grand
                 )
             """), {
                 "inv": invoice_no, "cust": customer_name,
+                "address": customer_address, "gstin": customer_gstin,
                 "date": datetime.utcnow(),
                 "total": round(subtotal, 2),
                 "gst": cgst + sgst, "grand": total
@@ -1086,7 +1117,8 @@ async def download_pdf(request: Request):
         total=total,
         date=datetime.now().strftime("%d-%b-%Y"),
         buyer_name=customer_name,
-        buyer_address=""
+        buyer_address=customer_address,
+        buyer_gstin=customer_gstin
     )
 
     # config = pdfkit.configuration(
