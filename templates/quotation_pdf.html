@@ -134,9 +134,9 @@ tr:nth-child(even) {
     </div>
 
     <div class="meta">
-        <h1>QUOTATION</h1>
+        <h1>TAX INVOICE</h1>
         <p>
-            <strong>No:</strong> {{ invoice_no }}<br>
+            <strong>Invoice No:</strong> {{ invoice_no }}<br>
             <strong>Date:</strong> {{ date }}
         </p>
     </div>
@@ -146,8 +146,8 @@ tr:nth-child(even) {
 <!-- BUYER -->
 <div class="buyer">
     <strong>Bill To:</strong><br>
-    <b>{{ buyer_name }}</b><br>
-    {{ buyer_address }}
+    <b>{{ buyer_name }}</b>
+    {% if buyer_address %}<br>{{ buyer_address }}{% endif %}
 </div>
 
 <!-- TABLE -->
@@ -177,8 +177,8 @@ tr:nth-child(even) {
             </td>
 
             <td class="text-center">{{ item.hsn }}</td>
-            <td class="text-right">{{ item.qty }}</td>
-            <td class="text-right">{{ item.rate }}</td>
+            <td class="text-center">{{ item.qty | int }}</td>
+            <td class="text-right">₹ {{ "%.2f"|format(item.rate) }}</td>
             <td class="text-right">{{ item.discount }}%</td>
             <td class="text-right">₹ {{ "%.2f"|format(item.taxable) }}</td>
         </tr>
@@ -217,6 +217,10 @@ tr:nth-child(even) {
     <p>Authorized Signatory</p>
     <br><br>
     _______________________
+</div>
+
+<div style="margin-top:20px; text-align:center;">
+    <button onclick="window.print()" style="background:#1e40af;color:#fff;border:none;padding:10px 28px;border-radius:6px;font-size:14px;cursor:pointer;">🖨️ Print / Save as PDF</button>
 </div>
 
 </body>

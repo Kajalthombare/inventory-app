@@ -876,11 +876,17 @@ def generate_invoice_no(db):
 @app.post("/download_pdf")
 async def download_pdf(request: Request):
 
-    data = await request.json()
+    payload = await request.json()
+    # Support both flat list (old) and {rows:[], customer_name:""} (new)
+    if isinstance(payload, list):
+        data = payload
+        customer_name = "Walk-In Customer"
+    else:
+        data = payload.get("rows", payload) if isinstance(payload.get("rows"), list) else payload
+        customer_name = payload.get("customer_name", "").strip() or "Walk-In Customer"
+        if isinstance(data, dict):  # still not right, fall back
+            data = [payload] if "part_no" in payload else []
     db = SessionLocal()
-
-    from collections import defaultdict
-    from sqlalchemy.exc import SQLAlchemyError
 
     try:
         # ===============================
@@ -910,20 +916,20 @@ async def download_pdf(request: Request):
                 {"p": row["part_no"]}
             ).fetchone()
 
-            desc = db_item.description if db_item and db_item.description else ""
-            hsn  = str(db_item.hsn)    if db_item and db_item.hsn         else ""
+            desc = db_item.description if db_item and db_item.description else row.get("description", "")
+            hsn  = str(db_item.hsn)    if db_item and db_item.hsn         else row.get("hsn", "")
 
-            # ✅ Rate priority: order_items.mrp → frontend row rate → products.rate
+            # Rate: orders.csv MRP first, then UI-entered rate, then product purchase rate
             rate = float(db_item.mrp) if db_item and db_item.mrp and float(db_item.mrp) > 0 else float(row.get("rate", 0))
             if rate == 0:
                 prod_fallback = db.query(Product).filter(Product.part_no == row["part_no"]).first()
                 if prod_fallback:
-                    rate        = float(prod_fallback.rate        or 0)
-                    desc        = desc or (prod_fallback.description or "")
-                    hsn         = hsn  or (prod_fallback.hsn         or "")
+                    rate = float(prod_fallback.rate or 0)
+                    desc = desc or (prod_fallback.description or "")
+                    hsn  = hsn  or (prod_fallback.hsn         or "")
 
-            qty = float(row["qty"])
-            disc = float(row["discount"])
+            qty  = float(row.get("qty", 1))
+            disc = float(row.get("discount", 0))
 
             # 🔥 UPDATE STOCK
             product = db.query(Product).filter(
@@ -969,26 +975,43 @@ async def download_pdf(request: Request):
         # ✅ STEP 4: SAVE INVOICE
         # ===============================
         invoice_no = generate_invoice_no(db)
-        customer_name = "Thakur Infraprojects Private Limited"
 
-        result = db.execute(text("""
-            INSERT INTO invoices (
-                invoice_no, customer_name, date,
-                total_amount, gst_amount, grand_total
-            ) VALUES (
-                :inv, :cust, :date,
-                :total, :gst, :grand
-            )
-        """), {
-            "inv": invoice_no,
-            "cust": customer_name,
-            "date": datetime.utcnow(),
-            "total": round(subtotal, 2),      # subtotal before GST
-            "gst": cgst + sgst,               # total GST amount
-            "grand": total                    # grand total (subtotal + GST)
-        })
+        # Use PostgreSQL-compatible insert with RETURNING, fallback to lastrowid
+        from database import engine as _engine
+        is_postgres = "postgresql" in str(_engine.url)
 
-        invoice_id = result.lastrowid
+        if is_postgres:
+            result = db.execute(text("""
+                INSERT INTO invoices (
+                    invoice_no, customer_name, date,
+                    total_amount, gst_amount, grand_total
+                ) VALUES (
+                    :inv, :cust, :date,
+                    :total, :gst, :grand
+                ) RETURNING id
+            """), {
+                "inv": invoice_no, "cust": customer_name,
+                "date": datetime.utcnow(),
+                "total": round(subtotal, 2),
+                "gst": cgst + sgst, "grand": total
+            })
+            invoice_id = result.fetchone()[0]
+        else:
+            result = db.execute(text("""
+                INSERT INTO invoices (
+                    invoice_no, customer_name, date,
+                    total_amount, gst_amount, grand_total
+                ) VALUES (
+                    :inv, :cust, :date,
+                    :total, :gst, :grand
+                )
+            """), {
+                "inv": invoice_no, "cust": customer_name,
+                "date": datetime.utcnow(),
+                "total": round(subtotal, 2),
+                "gst": cgst + sgst, "grand": total
+            })
+            invoice_id = result.lastrowid
 
         for it in items:
             db.execute(text("""
@@ -1021,17 +1044,15 @@ async def download_pdf(request: Request):
     template = env.get_template("quotation_pdf.html")
 
     html = template.render(
-        invoice_no=invoice_no,   # 🔥 IMPORTANT FIX
+        invoice_no=invoice_no,
         items=items,
         subtotal=round(subtotal, 2),
         cgst=cgst,
         sgst=sgst,
         total=total,
         date=datetime.now().strftime("%d-%b-%Y"),
-        buyer_name="Thakur Infraprojects Private Limited",
-        buyer_address="""Plot No. 265/01, Om Sadanika, Panvel
-Uran Road Uran Naka, Panvel, Raigad
-GSTIN: 27AACCT6451F1ZC"""
+        buyer_name=customer_name,
+        buyer_address=""
     )
 
     # config = pdfkit.configuration(
@@ -1084,9 +1105,6 @@ def sales_summary(
         "gst": float(result.total_gst or 0),
         "grand_total": float(result.grand_total or 0)
     }
-import_pdf = None
-from import_pdf import extract_products  # assuming your function name
-
 
 
 @app.get("/import_pdf_data")

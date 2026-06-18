@@ -803,6 +803,12 @@
                 </div>
             </div>
             <div class="section-body">
+                <div class="form-row" style="margin-bottom:12px;">
+                    <div class="form-field" style="flex:1;">
+                        <label>Customer / Party Name</label>
+                        <input type="text" id="inv_customer" class="form-input" placeholder="Enter customer name">
+                    </div>
+                </div>
                 <div class="table-wrap">
                     <table class="data-table" id="inv_table">
                         <thead>
@@ -1196,12 +1202,14 @@ async function fetchInvStock(i){
 async function raiseInvoice(){
     const filtered = invRows.filter(r=>r.part_no && r.qty>0);
     if (!filtered.length){ alert('Add at least one product'); return; }
-    const outOfStock = filtered.filter(r=>r.stock===0);
-    if (outOfStock.length){ alert('Some items are out of stock: ' + outOfStock.map(r=>r.part_no).join(', ')); return; }
-    const res = await fetch('/download_pdf',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(filtered)});
+    const outOfStock = filtered.filter(r=>r.stock===0 && r.part_no);
+    if (outOfStock.length){ alert('Out of stock: ' + outOfStock.map(r=>r.part_no).join(', ')); return; }
+    const customer = (document.getElementById('inv_customer')?.value || '').trim();
+    const payload = { rows: filtered, customer_name: customer };
+    const res = await fetch('/download_pdf',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
     if (!res.ok) { const e = await res.text(); alert('Error: ' + e); return; }
     const html = await res.text();
-    const w = window.open(); w.document.open(); w.document.write(html); w.document.close();
+    const w = window.open('','_blank'); w.document.open(); w.document.write(html); w.document.close();
     setTimeout(() => location.reload(), 800);
 }
 
