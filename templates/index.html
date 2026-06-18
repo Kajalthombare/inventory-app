@@ -831,7 +831,10 @@
         <div class="section-card" id="price-master-section">
             <div class="section-header">
                 <div class="section-title">📑 Price Master <span style="font-size:11px;font-weight:400;color:var(--text-muted);margin-left:8px;">— Selling rates from orders.csv</span></div>
-                <button onclick="showAddPMForm()" class="btn btn-primary btn-sm">+ Add Product</button>
+                <div style="display:flex;gap:8px;">
+                    <button onclick="reimportOrders()" class="btn btn-warning btn-sm">🔄 Reimport orders.csv</button>
+                    <button onclick="showAddPMForm()" class="btn btn-primary btn-sm">+ Add Product</button>
+                </div>
             </div>
             <div class="section-body">
                 <!-- Add form (hidden by default) -->
@@ -1273,6 +1276,21 @@ async function deletePM(id){
 }
 
 // Load price master on page load
+async function reimportOrders(){
+    if (!confirm('This will reload ALL products from orders.csv into the Price Master. Continue?')) return;
+    const btn = event.target;
+    btn.disabled = true; btn.textContent = '⏳ Importing...';
+    const res = await fetch('/reimport_orders');
+    const data = await res.json();
+    btn.disabled = false; btn.textContent = '🔄 Reimport orders.csv';
+    if (data.ok) {
+        alert(`✅ Imported ${data.imported.toLocaleString()} products from orders.csv`);
+        await fetchPM();
+    } else {
+        alert('Error: ' + (data.error || 'Unknown'));
+    }
+}
+
 loadPriceMaster();
 
 // ── Export Excel ──
