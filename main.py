@@ -89,19 +89,30 @@ def auto_import_inventory():
                         "mrp":  float(row.get("MRP", 0) or 0)
                     })
                     if len(batch) >= 500:
-                        for item in batch:
-                            db.execute(_text("""
-                                INSERT INTO order_items (part_no, description, hsn, mrp)
-                                VALUES (:pn, :desc, :hsn, :mrp)
-                            """), item)
+                        params = {}
+                        values_clauses = []
+                        for i, item in enumerate(batch):
+                            values_clauses.append(f"(:pn_{i}, :desc_{i}, :hsn_{i}, :mrp_{i})")
+                            params[f"pn_{i}"] = item["pn"]
+                            params[f"desc_{i}"] = item["desc"]
+                            params[f"hsn_{i}"] = item["hsn"]
+                            params[f"mrp_{i}"] = item["mrp"]
+                        sql = f"INSERT INTO order_items (part_no, description, hsn, mrp) VALUES {', '.join(values_clauses)}"
+                        db.execute(_text(sql), params)
                         db.commit()
                         batch = []
-                for item in batch:
-                    db.execute(_text("""
-                        INSERT INTO order_items (part_no, description, hsn, mrp)
-                        VALUES (:pn, :desc, :hsn, :mrp)
-                    """), item)
-                db.commit()
+                if batch:
+                    params = {}
+                    values_clauses = []
+                    for i, item in enumerate(batch):
+                        values_clauses.append(f"(:pn_{i}, :desc_{i}, :hsn_{i}, :mrp_{i})")
+                        params[f"pn_{i}"] = item["pn"]
+                        params[f"desc_{i}"] = item["desc"]
+                        params[f"hsn_{i}"] = item["hsn"]
+                        params[f"mrp_{i}"] = item["mrp"]
+                    sql = f"INSERT INTO order_items (part_no, description, hsn, mrp) VALUES {', '.join(values_clauses)}"
+                    db.execute(_text(sql), params)
+                    db.commit()
                 print(f"✅ Synced orders.csv ({csv_count} products into order_items)")
             else:
                 print(f"✅ order_items up to date ({oi_count} rows)")
@@ -645,15 +656,32 @@ def reimport_orders():
                 "mrp":  float(row.get("MRP", 0) or 0)
             })
             if len(batch) >= 500:
-                for item in batch:
-                    db.execute(text("INSERT INTO order_items (part_no, description, hsn, mrp) VALUES (:pn, :desc, :hsn, :mrp)"), item)
+                params = {}
+                values_clauses = []
+                for i, item in enumerate(batch):
+                    values_clauses.append(f"(:pn_{i}, :desc_{i}, :hsn_{i}, :mrp_{i})")
+                    params[f"pn_{i}"] = item["pn"]
+                    params[f"desc_{i}"] = item["desc"]
+                    params[f"hsn_{i}"] = item["hsn"]
+                    params[f"mrp_{i}"] = item["mrp"]
+                sql = f"INSERT INTO order_items (part_no, description, hsn, mrp) VALUES {', '.join(values_clauses)}"
+                db.execute(text(sql), params)
                 db.commit()
                 inserted += len(batch)
                 batch = []
-        for item in batch:
-            db.execute(text("INSERT INTO order_items (part_no, description, hsn, mrp) VALUES (:pn, :desc, :hsn, :mrp)"), item)
-        db.commit()
-        inserted += len(batch)
+        if batch:
+            params = {}
+            values_clauses = []
+            for i, item in enumerate(batch):
+                values_clauses.append(f"(:pn_{i}, :desc_{i}, :hsn_{i}, :mrp_{i})")
+                params[f"pn_{i}"] = item["pn"]
+                params[f"desc_{i}"] = item["desc"]
+                params[f"hsn_{i}"] = item["hsn"]
+                params[f"mrp_{i}"] = item["mrp"]
+            sql = f"INSERT INTO order_items (part_no, description, hsn, mrp) VALUES {', '.join(values_clauses)}"
+            db.execute(text(sql), params)
+            db.commit()
+            inserted += len(batch)
         return {"ok": True, "imported": inserted}
     except Exception as e:
         return {"error": str(e)}
