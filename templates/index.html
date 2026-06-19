@@ -222,7 +222,7 @@
 
         /* ── STAT CARDS ── */
         .stats-grid {
-            display: grid;
+            display: none; /* Controlled by tab management JS */
             grid-template-columns: repeat(4, 1fr);
             gap: 16px;
             margin-bottom: 24px;
@@ -270,6 +270,7 @@
             box-shadow: var(--shadow);
             margin-bottom: 20px;
             overflow: hidden;
+            display: none; /* Hide by default to prevent flashes; displayed dynamically via tab management JS */
         }
 
         .section-header {
@@ -464,7 +465,7 @@
         /* ── SALES SUMMARY ── */
         .summary-grid {
             display: grid;
-            grid-template-columns: repeat(4, 1fr);
+            grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
             gap: 14px;
             margin-top: 16px;
         }
@@ -479,6 +480,7 @@
         .summary-item .label { font-size: 11px; color: var(--text-muted); font-weight: 600; text-transform: uppercase; }
         .summary-item .value { font-size: 18px; font-weight: 700; color: var(--text); margin-top: 4px; }
         .summary-item .value.green { color: var(--success); }
+        .summary-item .value.red { color: var(--danger); }
 
         /* ── DATE PILL BUTTONS ── */
         .date-pills {
@@ -579,16 +581,19 @@
 
     <nav class="sidebar-nav">
         <div class="nav-section-label">Main</div>
-        <a class="nav-item active" href="#">
-            <span class="nav-icon">🗃</span> Inventory
+        <a class="nav-item active" href="#stock-section">
+            <span class="nav-icon">🗃</span> Stock Data
         </a>
         <a class="nav-item" href="#sales-section">
             <span class="nav-icon">📊</span> Sales Report
         </a>
+        <a class="nav-item" href="#purchase-section">
+            <span class="nav-icon">🛒</span> Purchase Report
+        </a>
 
         <div class="nav-section-label" style="margin-top:8px;">Billing</div>
         <a class="nav-item" href="#quotation-section">
-            <span class="nav-icon">📋</span> Quotation
+            <span class="nav-icon">📋</span> Proforma Invoice
         </a>
         <a class="nav-item" href="#invoice-section">
             <span class="nav-icon">🧾</span> Raise Invoice
@@ -601,7 +606,7 @@
 
         <div class="nav-section-label" style="margin-top:8px;">Tools</div>
         <a class="nav-item" href="#add-product-section">
-            <span class="nav-icon">➕</span> Add Product
+            <span class="nav-icon">➕</span> Stock Add/Update
         </a>
         <a class="nav-item" href="#upload-section">
             <span class="nav-icon">📥</span> Upload Order
@@ -639,17 +644,17 @@
             <div class="stat-card">
                 <div class="stat-icon" style="background:#eff6ff;">📦</div>
                 <div class="stat-label">Total Products</div>
-                <div class="stat-value" id="stat-total">—</div>
+                <div class="stat-value" id="stat-total">{{ stat_total }}</div>
             </div>
             <div class="stat-card">
                 <div class="stat-icon" style="background:#ecfdf5;">✅</div>
                 <div class="stat-label">In Stock</div>
-                <div class="stat-value" id="stat-instock" style="color:var(--success);">—</div>
+                <div class="stat-value" id="stat-instock" style="color:var(--success);">{{ stat_instock }}</div>
             </div>
             <div class="stat-card">
                 <div class="stat-icon" style="background:#fef2f2;">⚠️</div>
                 <div class="stat-label">Out of Stock</div>
-                <div class="stat-value" id="stat-outstock" style="color:var(--danger);">—</div>
+                <div class="stat-value" id="stat-outstock" style="color:var(--danger);">{{ stat_outstock }}</div>
             </div>
             <div class="stat-card">
                 <div class="stat-icon" style="background:#fffbeb;">💰</div>
@@ -698,6 +703,78 @@
                         <div class="label">SGST</div>
                         <div class="value">₹ <span id="total_sgst">—</span></div>
                     </div>
+                    <div class="summary-item">
+                        <div class="label">Total Cost</div>
+                        <div class="value" style="color:var(--text-muted);">₹ <span id="total_cost">—</span></div>
+                    </div>
+                    <div class="summary-item">
+                        <div class="label">Total Profit</div>
+                        <div class="value" id="total_profit_wrapper">₹ <span id="total_profit">—</span></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ── PURCHASE REPORT ── -->
+        <div class="section-card" id="purchase-section">
+            <div class="section-header">
+                <div class="section-title">🛒 Purchase Report</div>
+                <button onclick="exportPurchaseExcel()" class="btn btn-warning btn-sm">⬇ Export Excel</button>
+            </div>
+            <div class="section-body">
+                <div class="form-row">
+                    <div class="form-field">
+                        <label>From Date</label>
+                        <input type="date" id="p_start_date" class="form-input">
+                    </div>
+                    <div class="form-field">
+                        <label>To Date</label>
+                        <input type="date" id="p_end_date" class="form-input">
+                    </div>
+                    <div class="form-field" style="position:relative; min-width:220px;">
+                        <label>Vendor Name</label>
+                        <input type="text" id="p_vendor_search" class="form-input" placeholder="All Vendors (optional)" autocomplete="off">
+                        <div id="p_vendor_ac" class="ac-list"></div>
+                    </div>
+                    <button onclick="getPurchases()" class="btn btn-primary" style="margin-bottom:1px;">Check Purchases</button>
+                    <div class="date-pills" style="margin-bottom:1px;">
+                        <button onclick="setPThisMonth()" class="pill-btn">This Month</button>
+                        <button onclick="setPLastMonth()" class="pill-btn">Last Month</button>
+                    </div>
+                </div>
+
+                <div class="summary-grid" style="grid-template-columns: repeat(2, 1fr); max-width: 500px; margin-bottom: 24px;">
+                    <div class="summary-item">
+                        <div class="label">Total Purchases</div>
+                        <div class="value" id="p_total_count">—</div>
+                    </div>
+                    <div class="summary-item">
+                        <div class="label">Total Spend</div>
+                        <div class="value green">₹ <span id="p_total_amount">—</span></div>
+                    </div>
+                </div>
+
+                <div class="table-wrap">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Date</th>
+                                <th>Vendor Name</th>
+                                <th>Part No</th>
+                                <th>Description</th>
+                                <th>HSN</th>
+                                <th>Qty</th>
+                                <th>Rate (₹)</th>
+                                <th>Disc %</th>
+                                <th>Total (₹)</th>
+                            </tr>
+                        </thead>
+                        <tbody id="p_items_body">
+                            <tr>
+                                <td colspan="9" style="text-align:center;color:var(--text-muted);">No data loaded. Select filters and click Check Purchases.</td>
+                            </tr>
+                        </tbody>
+                    </table>
                 </div>
             </div>
         </div>
@@ -705,43 +782,72 @@
         <!-- ── ADD PRODUCT ── -->
         <div class="section-card" id="add-product-section">
             <div class="section-header">
-                <div class="section-title">➕ Add / Update Product</div>
+                <div class="section-title">➕ Stock Add/Update Product</div>
             </div>
             <div class="section-body">
-                <form action="/add" method="post" class="form-row">
-                    <div class="form-field" style="min-width:130px;">
-                        <label>Part No</label>
-                        <input id="part_no_input" name="part_no" class="form-input" placeholder="Part No" required>
+                <form action="/add" method="post">
+                    <div class="form-row" style="margin-bottom:12px;">
+                        <div class="form-field" style="min-width:130px;">
+                            <label>Part No</label>
+                            <input id="part_no_input" name="part_no" class="form-input" placeholder="Part No" required>
+                        </div>
+                        <div class="form-field" style="flex:1;min-width:160px;">
+                            <label>Description</label>
+                            <input name="description" class="form-input" placeholder="Description" required>
+                        </div>
+                        <div class="form-field" style="min-width:100px;">
+                            <label>HSN</label>
+                            <input name="hsn" class="form-input" placeholder="HSN">
+                        </div>
+                        <div class="form-field" style="min-width:70px;">
+                            <label>GST %</label>
+                            <input name="gst" value="18" class="form-input">
+                        </div>
+                        <div class="form-field" style="min-width:80px;">
+                            <label>Qty</label>
+                            <input name="quantity" type="number" class="form-input" placeholder="0">
+                        </div>
+                        <div class="form-field" style="min-width:90px;">
+                            <label>Rate (₹)</label>
+                            <input name="rate" type="number" class="form-input" placeholder="0">
+                        </div>
+                        <div class="form-field" style="min-width:80px;">
+                            <label>Disc %</label>
+                            <input name="discount" type="number" class="form-input" placeholder="0">
+                        </div>
+                        <div class="form-field" style="min-width:100px;">
+                            <label>Amount</label>
+                            <input name="amount" type="number" class="form-input" placeholder="0" readonly style="background:#f8fafc;">
+                        </div>
                     </div>
-                    <div class="form-field" style="flex:1;min-width:160px;">
-                        <label>Description</label>
-                        <input name="description" class="form-input" placeholder="Description" required>
+                    
+                    <div style="font-size:12px;font-weight:600;margin:12px 0 6px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;">Vendor Details (For Purchase Logging)</div>
+                    <div class="form-row">
+                        <div class="form-field" style="position:relative;flex:2;">
+                            <label>Vendor Name</label>
+                            <input id="v_name_input" name="vendor_name" class="form-input" placeholder="Vendor Name (optional)" autocomplete="off">
+                            <div id="v_name_ac" class="ac-list"></div>
+                        </div>
+                        <div class="form-field" style="flex:2;">
+                            <label>Address</label>
+                            <input id="v_addr_input" name="vendor_address" class="form-input" placeholder="Address">
+                        </div>
+                        <div class="form-field" style="flex:1;">
+                            <label>Mobile Num</label>
+                            <input id="v_mobile_input" name="vendor_mobile" class="form-input" placeholder="Mobile">
+                        </div>
+                        <div class="form-field" style="flex:1;">
+                            <label>GSTIN</label>
+                            <input id="v_gstin_input" name="vendor_gstin" class="form-input" placeholder="GSTIN">
+                        </div>
+                        <div class="form-field" style="flex:1.5;">
+                            <label>Email ID</label>
+                            <input id="v_email_input" name="vendor_email" class="form-input" placeholder="Email">
+                        </div>
+                        <div class="form-field" style="justify-content:flex-end;align-items:flex-end;padding-bottom:1px;min-width:90px;">
+                            <button type="submit" class="btn btn-primary" style="width:100%;height:38px;">Add</button>
+                        </div>
                     </div>
-                    <div class="form-field" style="min-width:100px;">
-                        <label>HSN</label>
-                        <input name="hsn" class="form-input" placeholder="HSN">
-                    </div>
-                    <div class="form-field" style="min-width:70px;">
-                        <label>GST %</label>
-                        <input name="gst" value="18" class="form-input">
-                    </div>
-                    <div class="form-field" style="min-width:80px;">
-                        <label>Qty</label>
-                        <input name="quantity" type="number" class="form-input" placeholder="0">
-                    </div>
-                    <div class="form-field" style="min-width:90px;">
-                        <label>Rate (₹)</label>
-                        <input name="rate" type="number" class="form-input" placeholder="0">
-                    </div>
-                    <div class="form-field" style="min-width:80px;">
-                        <label>Disc %</label>
-                        <input name="discount" type="number" class="form-input" placeholder="0">
-                    </div>
-                    <div class="form-field" style="min-width:100px;">
-                        <label>Amount</label>
-                        <input name="amount" type="number" class="form-input" placeholder="0" readonly style="background:#f8fafc;">
-                    </div>
-                    <button type="submit" class="btn btn-primary" style="margin-bottom:1px;">Add</button>
                 </form>
             </div>
         </div>
@@ -750,26 +856,35 @@
         <!-- ══ QUOTATION (no stock change) ══ -->
         <div class="section-card" id="quotation-section">
             <div class="section-header">
-                <div class="section-title">📋 Quotation <span style="font-size:11px;font-weight:400;color:var(--text-muted);margin-left:8px;">— Does NOT affect stock or sales</span></div>
+                <div class="section-title">📋 Proforma Invoice <span style="font-size:11px;font-weight:400;color:var(--text-muted);margin-left:8px;">— Does NOT affect stock or sales</span></div>
                 <div style="display:flex;gap:8px;">
                     <button onclick="addQRow()" class="btn btn-ghost btn-sm">+ Add Row</button>
                     <button onclick="downloadQuotationPDF()" class="btn btn-primary btn-sm">📄 Download PDF</button>
-                    <button onclick="saveQuotation()" class="btn btn-success btn-sm">💾 Save Quotation</button>
+                    <button onclick="saveQuotation()" class="btn btn-success btn-sm">💾 Save Proforma</button>
                 </div>
             </div>
             <div class="section-body">
                 <div class="form-row" style="margin-bottom:12px; gap:12px;">
-                    <div class="form-field" style="flex:2;">
+                    <div class="form-field" style="position:relative;flex:2;">
                         <label>Customer / Party Name</label>
-                        <input type="text" id="q_customer" class="form-input" placeholder="Enter customer name (optional)">
+                        <input type="text" id="q_customer" class="form-input" placeholder="Enter customer name (optional)" autocomplete="off">
+                        <div id="q_customer_ac" class="ac-list"></div>
                     </div>
                     <div class="form-field" style="flex:2;">
                         <label>Address</label>
                         <input type="text" id="q_customer_address" class="form-input" placeholder="Enter address (optional)">
                     </div>
                     <div class="form-field" style="flex:1;">
+                        <label>Mobile Num</label>
+                        <input type="text" id="q_customer_mobile" class="form-input" placeholder="Enter Mobile (optional)">
+                    </div>
+                    <div class="form-field" style="flex:1;">
                         <label>GSTIN Number</label>
                         <input type="text" id="q_customer_gstin" class="form-input" placeholder="Enter GSTIN (optional)">
+                    </div>
+                    <div class="form-field" style="flex:1.5;">
+                        <label>Email ID</label>
+                        <input type="text" id="q_customer_email" class="form-input" placeholder="Enter Email (optional)">
                     </div>
                 </div>
                 <div class="table-wrap">
@@ -795,7 +910,7 @@
                 </div>
                 <!-- Saved quotations list -->
                 <div id="quotation-list-wrap" style="margin-top:20px;">
-                    <div style="font-size:13px;font-weight:600;margin-bottom:8px;color:var(--text-muted);">Recent Quotations</div>
+                    <div style="font-size:13px;font-weight:600;margin-bottom:8px;color:var(--text-muted);">Recent Proforma Invoices</div>
                     <div id="quotation-list"></div>
                 </div>
             </div>
@@ -812,17 +927,26 @@
             </div>
             <div class="section-body">
                 <div class="form-row" style="margin-bottom:12px; gap:12px;">
-                    <div class="form-field" style="flex:2;">
+                    <div class="form-field" style="position:relative;flex:2;">
                         <label>Customer / Party Name</label>
-                        <input type="text" id="inv_customer" class="form-input" placeholder="Enter customer name">
+                        <input type="text" id="inv_customer" class="form-input" placeholder="Enter customer name" autocomplete="off">
+                        <div id="inv_customer_ac" class="ac-list"></div>
                     </div>
                     <div class="form-field" style="flex:2;">
                         <label>Address</label>
                         <input type="text" id="inv_customer_address" class="form-input" placeholder="Enter address (optional)">
                     </div>
                     <div class="form-field" style="flex:1;">
+                        <label>Mobile Num</label>
+                        <input type="text" id="inv_customer_mobile" class="form-input" placeholder="Enter Mobile (optional)">
+                    </div>
+                    <div class="form-field" style="flex:1;">
                         <label>GSTIN Number</label>
                         <input type="text" id="inv_customer_gstin" class="form-input" placeholder="Enter GSTIN (optional)">
+                    </div>
+                    <div class="form-field" style="flex:1.5;">
+                        <label>Email ID</label>
+                        <input type="text" id="inv_customer_email" class="form-input" placeholder="Enter Email (optional)">
                     </div>
                 </div>
                 <div class="table-wrap">
@@ -905,9 +1029,9 @@
         </div>
 
         <!-- ── PRODUCT TABLE ── -->
-        <div class="section-card">
+        <div class="section-card" id="stock-section">
             <div class="section-header">
-                <div class="section-title">🗃 Product Inventory</div>
+                <div class="section-title">🗃 Stock Data</div>
                 <span style="font-size:12px;color:var(--text-muted);">Total Value: <strong>₹ {{ total_value }}</strong></span>
             </div>
             <div class="table-wrap">
@@ -966,6 +1090,26 @@
                     </tbody>
                 </table>
             </div>
+
+            <!-- Stock Table Pagination -->
+            {% if total_pages > 1 %}
+            <div style="display:flex;gap:8px;padding:16px 20px;align-items:center;justify-content:space-between;border-top:1px solid var(--border);">
+                <div style="font-size:12px;color:var(--text-muted);">
+                    Showing page <strong>{{ current_page }}</strong> of {{ total_pages }} (Total {{ total_items }} items)
+                </div>
+                <div style="display:flex;gap:6px;">
+                    {% if current_page > 1 %}
+                        <a href="/?page=1&q={{ q }}" class="btn btn-ghost btn-sm">First</a>
+                        <a href="/?page={{ current_page - 1 }}&q={{ q }}" class="btn btn-ghost btn-sm">← Prev</a>
+                    {% endif %}
+                    <span style="font-size:12px;font-weight:600;padding:6px 12px;background:var(--primary-light);color:var(--primary);border-radius:6px;">{{ current_page }}</span>
+                    {% if current_page < total_pages %}
+                        <a href="/?page={{ current_page + 1 }}&q={{ q }}" class="btn btn-ghost btn-sm">Next →</a>
+                        <a href="/?page={{ total_pages }}&q={{ q }}" class="btn btn-ghost btn-sm">Last</a>
+                    {% endif %}
+                </div>
+            </div>
+            {% endif %}
         </div>
 
     </div><!-- /page-body -->
@@ -973,27 +1117,13 @@
 
 <!-- ═══════════════ SCRIPTS ═══════════════ -->
 <script>
-// ── Stat cards ──
-(function(){
-    const rows = document.querySelectorAll('#productTable tbody tr');
-    const total = rows.length;
-    let inStock = 0, outStock = 0;
-    rows.forEach(r => {
-        const badge = r.querySelector('.badge');
-        if (badge && badge.classList.contains('badge-danger')) outStock++;
-        else inStock++;
-    });
-    document.getElementById('stat-total').textContent = total;
-    document.getElementById('stat-instock').textContent = inStock;
-    document.getElementById('stat-outstock').textContent = outStock;
-})();
-
 // ── Search ──
-document.getElementById('search').addEventListener('keyup', function(){
-    const v = this.value.toLowerCase();
-    document.querySelectorAll('#productTable tbody tr').forEach(row => {
-        row.style.display = row.cells[0].innerText.toLowerCase().includes(v) ? '' : 'none';
-    });
+document.getElementById('search').value = "{{ q }}";
+document.getElementById('search').addEventListener('keypress', function(e){
+    if (e.key === 'Enter') {
+        const val = this.value.trim();
+        window.location.href = `/?q=${encodeURIComponent(val)}&page=1`;
+    }
 });
 
 // ── Auto fetch rate ──
@@ -1001,9 +1131,18 @@ document.getElementById('part_no_input').addEventListener('change', async functi
     const res = await fetch(`/get_price/${this.value}`);
     const data = await res.json();
     if (!data.error) {
-        document.querySelector('[name="description"]').value = data.description;
-        document.querySelector('[name="rate"]').value = data.rate;
-        document.querySelector('[name="hsn"]').value = data.hsn;
+        document.querySelector('[name="description"]').value = data.description || '';
+        document.querySelector('[name="rate"]').value = data.rate || 0;
+        document.querySelector('[name="hsn"]').value = data.hsn || '';
+        
+        // Auto-fill vendor details if they exist in the product record
+        if (data.vendor_name) {
+            document.getElementById('v_name_input').value = data.vendor_name;
+            document.getElementById('v_addr_input').value = data.vendor_address || '';
+            document.getElementById('v_mobile_input').value = data.vendor_mobile || '';
+            document.getElementById('v_gstin_input').value = data.vendor_gstin || '';
+            document.getElementById('v_email_input').value = data.vendor_email || '';
+        }
         calculateAmount();
     }
 });
@@ -1031,6 +1170,21 @@ async function getSales(){
     const gst = data.gst || 0;
     document.getElementById('total_cgst').textContent = new Intl.NumberFormat('en-IN').format(gst / 2);
     document.getElementById('total_sgst').textContent = new Intl.NumberFormat('en-IN').format(gst / 2);
+    
+    // Set cost and profit
+    const cost = data.cost || 0;
+    const profit = data.profit || 0;
+    document.getElementById('total_cost').textContent = new Intl.NumberFormat('en-IN').format(cost);
+    
+    const profitEl = document.getElementById('total_profit');
+    profitEl.textContent = new Intl.NumberFormat('en-IN').format(profit);
+    
+    const profitWrapper = document.getElementById('total_profit_wrapper');
+    if (profit >= 0) {
+        profitWrapper.className = 'value green';
+    } else {
+        profitWrapper.className = 'value red';
+    }
 }
 
 window.onload = () => {
@@ -1038,6 +1192,13 @@ window.onload = () => {
     document.getElementById('start_date').value = today;
     document.getElementById('end_date').value   = today;
     getSales();
+    
+    // Purchase Report initial dates
+    if (document.getElementById('p_start_date')) {
+        document.getElementById('p_start_date').value = today;
+        document.getElementById('p_end_date').value = today;
+        getPurchases();
+    }
 };
 
 function setThisMonth(){
@@ -1060,6 +1221,70 @@ function exportExcel(){
     const e = document.getElementById('end_date').value;
     if (!s || !e) { alert('Select dates first'); return; }
     window.open(`/export_excel?start_date=${s}&end_date=${e}`);
+}
+
+async function getPurchases(){
+    const start  = document.getElementById('p_start_date').value;
+    const end    = document.getElementById('p_end_date').value;
+    const vendor = document.getElementById('p_vendor_search').value;
+    if (!start || !end) { alert('Select both dates'); return; }
+    
+    const url = `/purchase_summary?start_date=${start}&end_date=${end}&vendor=${encodeURIComponent(vendor)}`;
+    const data = await (await fetch(url)).json();
+    
+    document.getElementById('p_total_count').textContent = data.count;
+    document.getElementById('p_total_amount').textContent  = new Intl.NumberFormat('en-IN').format(data.total_amount);
+    
+    if (data.items.length === 0) {
+        document.getElementById('p_items_body').innerHTML = `
+            <tr>
+                <td colspan="9" style="text-align:center;color:var(--text-muted);">No purchases found for selected filters.</td>
+            </tr>
+        `;
+        return;
+    }
+    
+    document.getElementById('p_items_body').innerHTML = data.items.map(it => `
+        <tr>
+            <td style="color:var(--text-muted);font-size:12px;">${it.date.split(' ')[0]}</td>
+            <td style="font-weight:600;">${it.vendor_name}</td>
+            <td style="font-weight:600;color:var(--primary);">${it.part_no}</td>
+            <td style="color:var(--text-muted);">${it.description}</td>
+            <td>${it.hsn || '—'}</td>
+            <td><span class="badge badge-success">${it.quantity}</span></td>
+            <td>${it.rate.toFixed(2)}</td>
+            <td>${it.discount}%</td>
+            <td style="font-weight:700;">₹ ${it.amount.toFixed(2)}</td>
+        </tr>
+    `).join('');
+}
+
+function exportPurchaseExcel(){
+    const start  = document.getElementById('p_start_date').value;
+    const end    = document.getElementById('p_end_date').value;
+    const vendor = document.getElementById('p_vendor_search').value;
+    if (!start || !end) { alert('Select dates first'); return; }
+    window.open(`/export_purchase_excel?start_date=${start}&end_date=${end}&vendor=${encodeURIComponent(vendor)}`);
+}
+
+function setPThisMonth(){
+    const now = new Date();
+    const y = now.getFullYear(), m = now.getMonth();
+    const start = new Date(y, m, 1).toISOString().split('T')[0];
+    const end = new Date(y, m + 1, 0).toISOString().split('T')[0];
+    document.getElementById('p_start_date').value = start;
+    document.getElementById('p_end_date').value = end;
+    getPurchases();
+}
+
+function setPLastMonth(){
+    const now = new Date();
+    const y = now.getFullYear(), m = now.getMonth();
+    const start = new Date(y, m - 1, 1).toISOString().split('T')[0];
+    const end = new Date(y, m, 0).toISOString().split('T')[0];
+    document.getElementById('p_start_date').value = start;
+    document.getElementById('p_end_date').value = end;
+    getPurchases();
 }
 
 // ══════════════════════════════════════════
@@ -1088,8 +1313,96 @@ function acPick(el) {
     list._onSelect({ part_no: el.dataset.pno, description: el.dataset.desc, rate: parseFloat(el.dataset.rate), hsn: el.dataset.hsn });
     list.style.display = 'none';
 }
+
+// ── Vendor Autocomplete ──
+let acVendorTimer = null;
+async function acVendorSearch(inputEl, listEl, onSelect) {
+    clearTimeout(acVendorTimer);
+    const q = inputEl.value.trim();
+    if (q.length < 2) { listEl.style.display='none'; return; }
+    acVendorTimer = setTimeout(async () => {
+        const res = await fetch(`/search_vendors?q=${encodeURIComponent(q)}`);
+        const data = await res.json();
+        if (!data.length) { listEl.style.display='none'; return; }
+        listEl.innerHTML = data.map(d =>
+            `<div class="ac-item" onclick="acVendorPick(this)" data-name="${d.name}" data-address="${d.address}" data-mobile="${d.mobile_num}" data-gstin="${d.gstin}" data-email="${d.email_id}">
+                <strong>${d.name}</strong> — ${d.mobile_num || 'No Mobile'}
+            </div>`
+        ).join('');
+        listEl._onSelect = onSelect;
+        listEl.style.display = 'block';
+    }, 250);
+}
+function acVendorPick(el) {
+    const list = el.parentElement;
+    list._onSelect({
+        name: el.dataset.name,
+        address: el.dataset.address,
+        mobile_num: el.dataset.mobile,
+        gstin: el.dataset.gstin,
+        email_id: el.dataset.email
+    });
+    list.style.display = 'none';
+}
+
 document.addEventListener('click', e => {
     document.querySelectorAll('.ac-list').forEach(l => { if (!l.contains(e.target)) l.style.display='none'; });
+});
+
+// Hook up autocomplete inputs
+document.getElementById('v_name_input').addEventListener('input', function() {
+    acVendorSearch(this, document.getElementById('v_name_ac'), d => {
+        document.getElementById('v_name_input').value = d.name;
+        document.getElementById('v_addr_input').value = d.address;
+        document.getElementById('v_mobile_input').value = d.mobile_num;
+        document.getElementById('v_gstin_input').value = d.gstin;
+        document.getElementById('v_email_input').value = d.email_id;
+    });
+});
+
+document.getElementById('v_name_input').addEventListener('change', async function() {
+    const val = this.value.trim();
+    if (val.length < 2) return;
+    
+    // Fetch matching vendors
+    const res = await fetch(`/search_vendors?q=${encodeURIComponent(val)}`);
+    const data = await res.json();
+    
+    // Check if there is an exact match (case insensitive)
+    const exact = data.find(d => d.name.toLowerCase() === val.toLowerCase());
+    if (exact) {
+        document.getElementById('v_name_input').value = exact.name;
+        document.getElementById('v_addr_input').value = exact.address;
+        document.getElementById('v_mobile_input').value = exact.mobile_num;
+        document.getElementById('v_gstin_input').value = exact.gstin;
+        document.getElementById('v_email_input').value = exact.email_id;
+    }
+});
+
+document.getElementById('q_customer').addEventListener('input', function() {
+    acVendorSearch(this, document.getElementById('q_customer_ac'), d => {
+        document.getElementById('q_customer').value = d.name;
+        document.getElementById('q_customer_address').value = d.address;
+        document.getElementById('q_customer_mobile').value = d.mobile_num;
+        document.getElementById('q_customer_gstin').value = d.gstin;
+        document.getElementById('q_customer_email').value = d.email_id;
+    });
+});
+
+document.getElementById('inv_customer').addEventListener('input', function() {
+    acVendorSearch(this, document.getElementById('inv_customer_ac'), d => {
+        document.getElementById('inv_customer').value = d.name;
+        document.getElementById('inv_customer_address').value = d.address;
+        document.getElementById('inv_customer_mobile').value = d.mobile_num;
+        document.getElementById('inv_customer_gstin').value = d.gstin;
+        document.getElementById('inv_customer_email').value = d.email_id;
+    });
+});
+
+document.getElementById('p_vendor_search').addEventListener('input', function() {
+    acVendorSearch(this, document.getElementById('p_vendor_ac'), d => {
+        document.getElementById('p_vendor_search').value = d.name;
+    });
 });
 
 // ══════════════════════════════════════════
@@ -1147,8 +1460,10 @@ async function downloadQuotationPDF(){
     const customer = document.getElementById('q_customer').value;
     const address = document.getElementById('q_customer_address').value;
     const gstin = document.getElementById('q_customer_gstin').value;
+    const mobile = document.getElementById('q_customer_mobile').value;
+    const email = document.getElementById('q_customer_email').value;
     const res = await fetch('/download_quotation_pdf',{method:'POST',headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({rows: qRows.filter(r=>r.part_no), customer_name: customer, customer_address: address, customer_gstin: gstin})});
+        body: JSON.stringify({rows: qRows.filter(r=>r.part_no), customer_name: customer, customer_address: address, customer_gstin: gstin, customer_mobile: mobile, customer_email: email})});
     const html = await res.text();
     const w = window.open(); w.document.open(); w.document.write(html); w.document.close();
 }
@@ -1159,11 +1474,13 @@ async function saveQuotation(){
     const customer = document.getElementById('q_customer').value;
     const address = document.getElementById('q_customer_address').value;
     const gstin = document.getElementById('q_customer_gstin').value;
+    const mobile = document.getElementById('q_customer_mobile').value;
+    const email = document.getElementById('q_customer_email').value;
     const res = await fetch('/save_quotation',{method:'POST',headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({rows: filtered, customer_name: customer, customer_address: address, customer_gstin: gstin})});
+        body: JSON.stringify({rows: filtered, customer_name: customer, customer_address: address, customer_gstin: gstin, customer_mobile: mobile, customer_email: email})});
     const data = await res.json();
     if (data.ok) {
-        alert(`✅ Quotation saved: ${data.quotation_no}`);
+        alert(`✅ Proforma Invoice saved: ${data.quotation_no}`);
         loadQuotationList();
     } else { alert('Error: ' + (data.error||'Unknown')); }
 }
@@ -1171,9 +1488,9 @@ async function saveQuotation(){
 async function loadQuotationList(){
     const res = await fetch('/quotations');
     const data = await res.json();
-    if (!data.length){ document.getElementById('quotation-list').innerHTML='<div style="color:var(--text-muted);font-size:13px;">No quotations yet</div>'; return; }
+    if (!data.length){ document.getElementById('quotation-list').innerHTML='<div style="color:var(--text-muted);font-size:13px;">No proforma invoices yet</div>'; return; }
     document.getElementById('quotation-list').innerHTML = `<table class="data-table" style="font-size:12px;">
-        <thead><tr><th>Quotation No</th><th>Customer</th><th>Date</th><th>Grand Total (₹)</th></tr></thead>
+        <thead><tr><th>Proforma Invoice No</th><th>Customer</th><th>Date</th><th>Grand Total (₹)</th></tr></thead>
         <tbody>${data.map(q=>`<tr><td style="font-weight:600;">${q.quotation_no}</td><td>${q.customer_name||'—'}</td><td>${q.date}</td><td>₹ ${q.grand_total.toLocaleString('en-IN',{minimumFractionDigits:2})}</td></tr>`).join('')}</tbody>
     </table>`;
 }
@@ -1241,7 +1558,9 @@ async function raiseInvoice(){
     const customer = (document.getElementById('inv_customer')?.value || '').trim();
     const address = (document.getElementById('inv_customer_address')?.value || '').trim();
     const gstin = (document.getElementById('inv_customer_gstin')?.value || '').trim();
-    const payload = { rows: filtered, customer_name: customer, customer_address: address, customer_gstin: gstin };
+    const mobile = (document.getElementById('inv_customer_mobile')?.value || '').trim();
+    const email = (document.getElementById('inv_customer_email')?.value || '').trim();
+    const payload = { rows: filtered, customer_name: customer, customer_address: address, customer_gstin: gstin, customer_mobile: mobile, customer_email: email };
     const res = await fetch('/download_pdf',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
     if (!res.ok) { const e = await res.text(); alert('Error: ' + e); return; }
     const html = await res.text();
@@ -1357,6 +1676,68 @@ function reloadPage(){
     setTimeout(() => location.reload(), 300);
     return true;
 }
+
+// ── Tab Management ──
+function initTabs() {
+    const tabs = [
+        'stock-section',
+        'sales-section',
+        'purchase-section',
+        'quotation-section',
+        'invoice-section',
+        'price-master-section',
+        'add-product-section',
+        'upload-section'
+    ];
+
+    function showTab(targetId) {
+        // Hide all tabs
+        tabs.forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.style.display = 'none';
+        });
+
+        // Show selected tab
+        const activeTab = document.getElementById(targetId);
+        if (activeTab) activeTab.style.display = 'block';
+
+        // Stats grid only visible on stock section
+        const stats = document.querySelector('.stats-grid');
+        if (stats) {
+            stats.style.display = (targetId === 'stock-section') ? 'grid' : 'none';
+        }
+
+        // Search bar only visible on stock section
+        const searchBar = document.querySelector('.topbar-search');
+        if (searchBar) {
+            searchBar.style.display = (targetId === 'stock-section') ? 'flex' : 'none';
+        }
+
+        // Update active class on nav items
+        document.querySelectorAll('.nav-item').forEach(item => {
+            const href = item.getAttribute('href');
+            if (href) {
+                const itemHash = href.replace('#', '') || 'stock-section';
+                if (itemHash === targetId) {
+                    item.classList.add('active');
+                } else {
+                    item.classList.remove('active');
+                }
+            }
+        });
+    }
+
+    function handleHashChange() {
+        const hash = window.location.hash || '#stock-section';
+        const targetId = hash.replace('#', '') || 'stock-section';
+        showTab(targetId);
+    }
+
+    window.addEventListener('hashchange', handleHashChange);
+    handleHashChange(); // Run once on load
+}
+
+initTabs();
 </script>
 
 

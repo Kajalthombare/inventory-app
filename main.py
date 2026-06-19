@@ -39,12 +39,38 @@ def auto_import_inventory():
 
         # ── 0. Run auto-migrations for invoices & quotations ──
         for table in ["invoices", "quotations"]:
-            for col, col_type in [("customer_address", "VARCHAR(255)"), ("customer_gstin", "VARCHAR(50)")]:
+            for col, col_type in [
+                ("customer_address", "VARCHAR(255)"),
+                ("customer_gstin", "VARCHAR(50)"),
+                ("customer_mobile", "VARCHAR(50)"),
+                ("customer_email", "VARCHAR(255)")
+            ]:
                 try:
                     db.execute(_text(f"ALTER TABLE {table} ADD COLUMN {col} {col_type}"))
                     db.commit()
                 except Exception:
                     db.rollback()
+
+        # Add purchase_rate to invoice_items
+        try:
+            db.execute(_text("ALTER TABLE invoice_items ADD COLUMN purchase_rate FLOAT DEFAULT 0.0"))
+            db.commit()
+        except Exception:
+            db.rollback()
+
+        # Add vendor details to products table
+        for col, col_type in [
+            ("vendor_name", "VARCHAR(255)"),
+            ("vendor_address", "VARCHAR(255)"),
+            ("vendor_mobile", "VARCHAR(50)"),
+            ("vendor_gstin", "VARCHAR(50)"),
+            ("vendor_email", "VARCHAR(255)")
+        ]:
+            try:
+                db.execute(_text(f"ALTER TABLE products ADD COLUMN {col} {col_type}"))
+                db.commit()
+            except Exception:
+                db.rollback()
 
         # ── 1. Import inventory.xlsx → products table ──
         count = db.execute(_text("SELECT COUNT(*) FROM products")).scalar()
@@ -164,6 +190,11 @@ class Product(Base):
     rate = Column(Float)
     discount = Column(Float)
     amount = Column(Float)
+    vendor_name = Column(String(255), nullable=True)
+    vendor_address = Column(String(255), nullable=True)
+    vendor_mobile = Column(String(50), nullable=True)
+    vendor_gstin = Column(String(50), nullable=True)
+    vendor_email = Column(String(255), nullable=True)
 
 class Invoice(Base):
     __tablename__ = "invoices"
@@ -173,6 +204,8 @@ class Invoice(Base):
     customer_name = Column(String(255))
     customer_address = Column(String(255), nullable=True)
     customer_gstin = Column(String(50), nullable=True)
+    customer_mobile = Column(String(50), nullable=True)
+    customer_email = Column(String(255), nullable=True)
     date = Column(DateTime, default=datetime.utcnow)
 
     total_amount = Column(Float)
@@ -194,6 +227,7 @@ class InvoiceItem(Base):
     amount = Column(Float)
 
     hsn = Column(String(50))
+    purchase_rate = Column(Float, default=0.0)
 
 # class OrderItems(Base):
 #     __tablename__ = "order_items"
@@ -220,6 +254,8 @@ class Quotation(Base):
     customer_name = Column(String(255), default="")
     customer_address = Column(String(255), default="")
     customer_gstin = Column(String(50), default="")
+    customer_mobile = Column(String(50), default="")
+    customer_email = Column(String(255), default="")
     date = Column(DateTime, default=datetime.utcnow)
     total_amount = Column(Float, default=0.0)
     grand_total = Column(Float, default=0.0)
@@ -235,6 +271,28 @@ class QuotationItem(Base):
     discount = Column(Float)
     amount = Column(Float)
     hsn = Column(String(50), default="")
+
+class Vendor(Base):
+    __tablename__ = "vendors"
+    id = Column(Integer, primary_key=True)
+    name = Column(String(255), unique=True)
+    address = Column(String(255), nullable=True)
+    mobile_num = Column(String(50), nullable=True)
+    gstin = Column(String(50), nullable=True)
+    email_id = Column(String(255), nullable=True)
+
+class Purchase(Base):
+    __tablename__ = "purchases"
+    id = Column(Integer, primary_key=True)
+    vendor_name = Column(String(255))
+    part_no = Column(String(100))
+    description = Column(String(255))
+    hsn = Column(String(50))
+    quantity = Column(Integer)
+    rate = Column(Float)
+    discount = Column(Float)
+    amount = Column(Float)
+    date = Column(DateTime, default=datetime.utcnow)
 
 Base.metadata.create_all(bind=engine)
 
@@ -297,28 +355,65 @@ def logout(request: Request):
 
 # ── Protected home route ──
 @app.get("/", response_class=HTMLResponse)
-def home(request: Request):
+def home(request: Request, page: int = 1, q: str = ""):
     if not request.session.get("user"):
         return RedirectResponse("/login", status_code=302)
 
     db = SessionLocal()
+    from sqlalchemy import func
 
-    products = db.query(Product).order_by(
+    per_page = 50
+    offset = (page - 1) * per_page
+    q_clean = q.strip().upper()
+
+    query = db.query(Product)
+    if q_clean:
+        query = query.filter(
+            (func.upper(Product.part_no).like(f"%{q_clean}%")) |
+            (func.upper(Product.description).like(f"%{q_clean}%"))
+        )
+
+    ordered_query = query.order_by(
         case(
             (Product.quantity == 0, 0),
             (Product.quantity < 5, 1),
             else_=2
         )
-    ).all()
+    )
+
+    total_items = ordered_query.count()
+    products = ordered_query.offset(offset).limit(per_page).all()
+
+    # Total value of all stock in DB
+    total_value_query = db.query(Product).filter(Product.quantity > 0).all()
     total_value = sum(
-    (p.quantity * p.rate) - ((p.quantity * p.rate) * (p.discount / 100))
-    if p.quantity > 0 else 0
-    for p in products
-)
+        (p.quantity * p.rate) - ((p.quantity * p.rate) * (p.discount / 100))
+        for p in total_value_query
+    )
+
+    # Global stats for dashboard
+    stat_total = db.query(Product).count()
+    stat_instock = db.query(Product).filter(Product.quantity > 0).count()
+    stat_outstock = db.query(Product).filter(Product.quantity == 0).count()
+
+    total_pages = (total_items + per_page - 1) // per_page
+    if total_pages < 1:
+        total_pages = 1
 
     db.close()
 
-    return render("index.html", products=products, total_value=round(total_value, 2))
+    return render(
+        "index.html",
+        products=products,
+        total_value=round(total_value, 2),
+        current_page=page,
+        total_pages=total_pages,
+        total_items=total_items,
+        stat_total=stat_total,
+        stat_instock=stat_instock,
+        stat_outstock=stat_outstock,
+        q=q
+    )
 # ---------------- PRICE MASTER UPLOAD ----------------
 
 
@@ -328,7 +423,6 @@ import io
 
 @app.get("/export_excel")
 def export_excel(start_date: str, end_date: str):
-
     db = SessionLocal()
 
     query = text("""
@@ -348,6 +442,19 @@ def export_excel(start_date: str, end_date: str):
         "end": end_date
     }).fetchall()
 
+    profit_query = text("""
+        SELECT 
+            SUM(COALESCE(ii.purchase_rate, 0.0) * ii.quantity) as total_purchase_cost
+        FROM invoice_items ii
+        JOIN invoices i ON ii.invoice_id = i.id
+        WHERE DATE(i.date) BETWEEN :start AND :end
+    """)
+
+    total_cost = db.execute(profit_query, {
+        "start": start_date,
+        "end": end_date
+    }).scalar() or 0.0
+
     db.close()
 
     df = pd.DataFrame(result, columns=[
@@ -362,6 +469,7 @@ def export_excel(start_date: str, end_date: str):
     total_cgst = df["CGST"].sum()
     total_sgst = df["SGST"].sum()
     grand_total = df["Grand Total"].sum()
+    total_profit = total_sales - total_cost
 
     summary_df = pd.DataFrame({
         "Metric": [
@@ -369,40 +477,32 @@ def export_excel(start_date: str, end_date: str):
             "Total Sales",
             "Total CGST",
             "Total SGST",
-            "Grand Total"
+            "Grand Total",
+            "Total Purchase Cost",
+            "Total Profit"
         ],
         "Value": [
             total_orders,
             total_sales,
             total_cgst,
             total_sgst,
-            grand_total
+            grand_total,
+            total_cost,
+            total_profit
         ]
     })
 
-    file_path = "/tmp/sales.xlsx"
-
-    with pd.ExcelWriter(file_path, engine='openpyxl') as writer:
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
         df.to_excel(writer, sheet_name="Sales Data", index=False)
         summary_df.to_excel(writer, sheet_name="Summary", index=False)
-
-    return FileResponse(file_path, filename="sales.xlsx")
-
-    # -------------------------
-    # WRITE TO EXCEL
-    # -------------------------
-    output = io.BytesIO()
-
-    with pd.ExcelWriter(output, engine='openpyxl') as writer:
-        df.to_excel(writer, index=False, sheet_name="Sales Data")
-        summary_df.to_excel(writer, index=False, sheet_name="Summary")
 
     output.seek(0)
 
     return StreamingResponse(
         output,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": "attachment; filename=sales_report.xlsx"}
+        headers={"Content-Disposition": "attachment; filename=sales.xlsx"}
     )
 @app.post("/upload_excel")
 def upload_excel(file: UploadFile = File(...)):
@@ -499,24 +599,72 @@ def add_product(
     gst: float = Form(...),
     quantity: int = Form(...),
     rate: float = Form(...),
-    discount: float = Form(0)
+    discount: float = Form(0),
+    vendor_name: str = Form(None),
+    vendor_address: str = Form(None),
+    vendor_mobile: str = Form(None),
+    vendor_gstin: str = Form(None),
+    vendor_email: str = Form(None)
 ):
     db = SessionLocal()
 
-    price = db.query(OrderItems).filter(OrderItems.part_no == part_no).first()
-    if price and price.mrp > 0:
-        rate = price.mrp
+    # Rate fallback if not provided or 0
+    if rate <= 0:
+        price = db.query(OrderItems).filter(OrderItems.part_no == part_no).first()
+        if price and price.mrp > 0:
+            rate = price.mrp
 
+    # 1. Save or Update Vendor details if vendor_name is provided
+    if vendor_name and vendor_name.strip():
+        v_name = vendor_name.strip()
+        existing_vendor = db.query(Vendor).filter(Vendor.name == v_name).first()
+        if existing_vendor:
+            if vendor_address is not None:
+                existing_vendor.address = vendor_address.strip()
+            if vendor_mobile is not None:
+                existing_vendor.mobile_num = vendor_mobile.strip()
+            if vendor_gstin is not None:
+                existing_vendor.gstin = vendor_gstin.strip()
+            if vendor_email is not None:
+                existing_vendor.email_id = vendor_email.strip()
+        else:
+            new_vendor = Vendor(
+                name=v_name,
+                address=vendor_address.strip() if vendor_address else "",
+                mobile_num=vendor_mobile.strip() if vendor_mobile else "",
+                gstin=vendor_gstin.strip() if vendor_gstin else "",
+                email_id=vendor_email.strip() if vendor_email else ""
+            )
+            db.add(new_vendor)
+        db.commit()
+
+    # 2. Record Purchase if quantity > 0
+    if quantity > 0:
+        purchase_amt = (quantity * rate) - ((quantity * rate) * (discount / 100))
+        new_purchase = Purchase(
+            vendor_name=vendor_name.strip() if (vendor_name and vendor_name.strip()) else "Local Vendor",
+            part_no=part_no.strip(),
+            description=description.strip(),
+            hsn=hsn.strip(),
+            quantity=quantity,
+            rate=rate,
+            discount=discount,
+            amount=round(purchase_amt, 2),
+            date=datetime.now()
+        )
+        db.add(new_purchase)
+
+    # 3. Update stock (existing logic)
     existing = db.query(Product).filter(Product.part_no == part_no).first()
 
     if existing:
         existing.quantity += quantity
 
-        # ✅ update rate if valid
+        # update rate if valid
         if rate > 0:
             existing.rate = rate
 
-        # ✅ calculate amount
+        # calculate amount
         if existing.quantity <= 0:
             existing.quantity = 0
             existing.amount = 0
@@ -525,8 +673,16 @@ def add_product(
                 (existing.quantity * existing.rate) * (existing.discount / 100)
             )
 
+        # Update vendor details
+        if vendor_name and vendor_name.strip():
+            existing.vendor_name = vendor_name.strip()
+            existing.vendor_address = vendor_address.strip() if vendor_address else ""
+            existing.vendor_mobile = vendor_mobile.strip() if vendor_mobile else ""
+            existing.vendor_gstin = vendor_gstin.strip() if vendor_gstin else ""
+            existing.vendor_email = vendor_email.strip() if vendor_email else ""
+
     else:
-        # ✅ new product
+        # new product
         if quantity <= 0:
             amount = 0
         else:
@@ -542,12 +698,17 @@ def add_product(
             quantity=quantity,
             rate=rate,
             discount=discount,
-            amount=amount
+            amount=amount,
+            vendor_name=vendor_name.strip() if (vendor_name and vendor_name.strip()) else "",
+            vendor_address=vendor_address.strip() if vendor_address else "",
+            vendor_mobile=vendor_mobile.strip() if vendor_mobile else "",
+            vendor_gstin=vendor_gstin.strip() if vendor_gstin else "",
+            vendor_email=vendor_email.strip() if vendor_email else ""
         )
 
         db.add(new_product)
 
-    # ✅ SINGLE COMMIT (VERY IMPORTANT)
+    # SINGLE COMMIT
     db.commit()
     db.close()
 
@@ -559,19 +720,28 @@ def add_product(
 def get_price(part_no: str):
     db = SessionLocal()
 
+    # Check products table for existing vendor details and fallback rate
+    prod = db.query(Product).filter(Product.part_no == part_no).first()
+
     price = db.query(OrderItems).filter(
         OrderItems.part_no == part_no
     ).first()
 
     db.close()
 
-    if not price:
-        return {"rate": 0, "hsn": "", "description": ""}
+    rate = price.mrp if price else (prod.rate if prod else 0.0)
+    hsn = price.hsn if price else (prod.hsn if prod else "")
+    description = price.description if price else (prod.description if prod else "")
 
     return {
-        "rate": price.mrp,   # ✅ FIXED
-        "hsn": price.hsn,
-        "description": price.description
+        "rate": rate,
+        "hsn": hsn,
+        "description": description,
+        "vendor_name": prod.vendor_name if prod else "",
+        "vendor_address": prod.vendor_address if prod else "",
+        "vendor_mobile": prod.vendor_mobile if prod else "",
+        "vendor_gstin": prod.vendor_gstin if prod else "",
+        "vendor_email": prod.vendor_email if prod else ""
     }
 
 
@@ -716,6 +886,26 @@ def search_parts(q: str = ""):
     return [{"part_no": r.part_no, "description": r.description,
              "rate": float(r.mrp or 0), "hsn": str(r.hsn or "")} for r in results]
 
+@app.get("/search_vendors")
+def search_vendors(q: str = ""):
+    """Autocomplete: search vendors by name"""
+    db = SessionLocal()
+    q_clean = f"%{q.strip().upper()}%"
+    rows = db.execute(text("""
+        SELECT name, address, mobile_num, gstin, email_id
+        FROM vendors
+        WHERE UPPER(name) LIKE :q
+        LIMIT 10
+    """), {"q": q_clean}).fetchall()
+    db.close()
+    return [{
+        "name": r.name,
+        "address": r.address or "",
+        "mobile_num": r.mobile_num or "",
+        "gstin": r.gstin or "",
+        "email_id": r.email_id or ""
+    } for r in rows]
+
 @app.get("/price_master")
 def price_master_list(page: int = 1, q: str = ""):
     """List all products in order_items (price master) with pagination"""
@@ -802,8 +992,32 @@ async def save_quotation(request: Request):
     customer_name = data.get("customer_name", "")
     customer_address = data.get("customer_address", "")
     customer_gstin = data.get("customer_gstin", "")
+    customer_mobile = data.get("customer_mobile", "")
+    customer_email = data.get("customer_email", "")
+
     if not rows:
         return {"error": "No products"}
+
+    # 1. Save or Update Vendor details if customer_name is provided
+    if customer_name and customer_name.strip():
+        c_name = customer_name.strip()
+        existing_vendor = db.query(Vendor).filter(Vendor.name == c_name).first()
+        if existing_vendor:
+            if customer_address: existing_vendor.address = customer_address.strip()
+            if customer_mobile: existing_vendor.mobile_num = customer_mobile.strip()
+            if customer_gstin: existing_vendor.gstin = customer_gstin.strip()
+            if customer_email: existing_vendor.email_id = customer_email.strip()
+        else:
+            new_vendor = Vendor(
+                name=c_name,
+                address=customer_address.strip() if customer_address else "",
+                mobile_num=customer_mobile.strip() if customer_mobile else "",
+                gstin=customer_gstin.strip() if customer_gstin else "",
+                email_id=customer_email.strip() if customer_email else ""
+            )
+            db.add(new_vendor)
+        db.commit()
+
     total_amount = sum(r["rate"] * r["qty"] * (1 - r.get("discount", 0)/100) for r in rows)
     grand_total = total_amount * 1.18
     q_no = generate_quotation_no(db)
@@ -812,6 +1026,8 @@ async def save_quotation(request: Request):
         customer_name=customer_name,
         customer_address=customer_address,
         customer_gstin=customer_gstin,
+        customer_mobile=customer_mobile,
+        customer_email=customer_email,
         date=datetime.now(),
         total_amount=round(total_amount, 2),
         grand_total=round(grand_total, 2)
@@ -838,7 +1054,7 @@ async def save_quotation(request: Request):
 def list_quotations():
     db = SessionLocal()
     rows = db.execute(text("""
-        SELECT id, quotation_no, customer_name, customer_address, customer_gstin, date, grand_total
+        SELECT id, quotation_no, customer_name, customer_address, customer_gstin, customer_mobile, customer_email, date, grand_total
         FROM quotations ORDER BY id DESC LIMIT 50
     """)).fetchall()
     db.close()
@@ -846,66 +1062,222 @@ def list_quotations():
              "customer_name": r.customer_name,
              "customer_address": r.customer_address,
              "customer_gstin": r.customer_gstin,
+             "customer_mobile": r.customer_mobile,
+             "customer_email": r.customer_email,
              "date": str(r.date)[:10],
              "grand_total": float(r.grand_total or 0)} for r in rows]
 
 @app.post("/download_quotation_pdf")
 async def download_quotation_pdf(request: Request):
-    """Generate quotation PDF HTML — NO stock change"""
+    """Generate proforma invoice PDF HTML — NO stock change"""
     data = await request.json()
     rows = data.get("rows", [])
     customer_name = data.get("customer_name", "")
     customer_address = data.get("customer_address", "")
     customer_gstin = data.get("customer_gstin", "")
-    items, total = [], 0
+    customer_mobile = data.get("customer_mobile", "")
+    customer_email = data.get("customer_email", "")
+
+    items, subtotal = [], 0
     for r in rows:
         sub = r["rate"] * r["qty"]
         disc = sub * (r.get("discount", 0) / 100)
         after = sub - disc
-        gst_amt = after * 0.18
-        final = after + gst_amt
-        total += final
         items.append({
-            "part_no": r.get("part_no", ""), "description": r.get("description", ""),
-            "hsn": r.get("hsn", ""), "rate": r["rate"], "qty": r["qty"],
-            "discount": r.get("discount", 0), "gst": 18,
-            "amount": round(after, 2), "gst_amount": round(gst_amt, 2), "final": round(final, 2)
+            "part_no": r.get("part_no", ""),
+            "description": r.get("description", ""),
+            "hsn": r.get("hsn", ""),
+            "rate": r["rate"],
+            "qty": r["qty"],
+            "discount": r.get("discount", 0),
+            "taxable": round(after, 2)
         })
+        subtotal += after
+
+    cgst = round(subtotal * 0.09, 2)
+    sgst = round(subtotal * 0.09, 2)
+    total = round(subtotal + cgst + sgst, 2)
     date_str = datetime.now().strftime("%d-%b-%Y")
-    html = f"""<!DOCTYPE html><html><head><meta charset='UTF-8'>
-<title>Quotation</title>
+
+    # Render as Proforma Invoice styled like the Tax Invoice
+    html = f"""<!DOCTYPE html>
+<html>
+<head>
+<meta charset='utf-8'>
+<title>Proforma Invoice</title>
 <style>
-  body{{font-family:Arial,sans-serif;margin:30px;font-size:12px;}}
-  h2{{text-align:center;color:#1e40af;}} .subtitle{{text-align:center;color:#64748b;margin-bottom:20px;}}
-  table{{width:100%;border-collapse:collapse;margin-top:10px;}}
-  th{{background:#1e40af;color:#fff;padding:8px;text-align:left;}}
-  td{{padding:6px 8px;border-bottom:1px solid #e2e8f0;}}
-  tr:nth-child(even){{background:#f8fafc;}}
-  .total-row{{font-weight:bold;background:#e0e7ff!important;}}
-  .info{{display:flex;justify-content:space-between;margin-bottom:12px;}}
-  .badge{{background:#dbeafe;color:#1e40af;padding:2px 8px;border-radius:4px;font-size:11px;}}
-  @media print{{button{{display:none}}}}
-</style></head><body>
-<h2>QUOTATION</h2>
-<div class='subtitle'>This is a quotation only — not a tax invoice</div>
-<div class='info'>
-  <div>
-    <b>To:</b> {customer_name or '—'}<br>
-    {f"<b>Address:</b> {customer_address}<br>" if customer_address else ""}
-    {f"<b>GSTIN:</b> {customer_gstin}<br>" if customer_gstin else ""}
-  </div>
-  <div><b>Date:</b> {date_str} &nbsp; <span class='badge'>QUOTATION</span></div>
+body {{
+    font-family: Arial, sans-serif;
+    font-size: 13px;
+    color: #333;
+    margin: 30px;
+}}
+.header {{
+    display: flex;
+    justify-content: space-between;
+    border-bottom: 2px solid #000;
+    padding-bottom: 10px;
+}}
+.company h2 {{
+    margin: 0;
+    letter-spacing: 1px;
+}}
+.company p {{
+    margin: 4px 0;
+    font-size: 13px;
+    color: #444;
+}}
+.meta {{
+    text-align: right;
+}}
+.meta h1 {{
+    margin: 0;
+    font-size: 22px;
+    letter-spacing: 2px;
+}}
+.meta p {{
+    margin-top: 10px;
+    font-size: 13px;
+}}
+.buyer {{
+    margin-top: 20px;
+    padding: 10px;
+    background: #f5f5f5;
+    border-radius: 5px;
+}}
+table {{
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 20px;
+    font-size: 14px;
+}}
+th {{
+    background: #222;
+    color: #fff;
+    padding: 10px;
+    text-align: center;
+}}
+td {{
+    padding: 10px;
+    border-bottom: 1px solid #ddd;
+}}
+tr:nth-child(even) {{
+    background: #fafafa;
+}}
+.text-left {{ text-align: left; }}
+.text-right {{ text-align: right; }}
+.text-center {{ text-align: center; }}
+.total-box {{
+    width: 300px;
+    margin-left: auto;
+    margin-top: 20px;
+}}
+.total-box table td {{
+    border: none;
+    padding: 6px;
+}}
+.total-bold {{
+    font-weight: bold;
+    font-size: 15px;
+}}
+.signature {{
+    margin-top: 50px;
+    text-align: right;
+}}
+@media print {{
+    button {{ display: none; }}
+}}
+</style>
+</head>
+<body>
+
+<!-- HEADER -->
+<div class="header">
+    <div class="company">
+        <h2>MAHINDRA PRO SPARES</h2>
+        <p>
+            SHOP NO.01, CIDCO BUILDING,<br>
+            NEAR DEVANSHI HOTEL,<br>
+            TRUCK TERMINAL, KALAMBOLI,<br>
+            PANVEL, RAIGAD, MAHARASHTRA 410218
+        </p>
+        <p>
+            GSTIN: 27BHIPM7720B1ZH<br>
+            Contact: +91-8652369863<br>
+            Email: gksarvindkumar8652@gmail.com
+        </p>
+    </div>
+    <div class="meta">
+        <h1>PROFORMA INVOICE</h1>
+        <p>
+            <strong>Date:</strong> {date_str}
+        </p>
+    </div>
 </div>
+
+<!-- BUYER -->
+<div class="buyer">
+    <strong>To (Bill To):</strong><br>
+    <b>{customer_name or '—'}</b>
+    {f"<br>{customer_address}" if customer_address else ""}
+    {f"<br>GSTIN: {customer_gstin}" if customer_gstin else ""}
+    {f"<br>Mobile: {customer_mobile}" if customer_mobile else ""}
+    {f"<br>Email: {customer_email}" if customer_email else ""}
+</div>
+
+<!-- TABLE -->
 <table>
-<tr><th>#</th><th>Part No</th><th>Description</th><th>HSN</th><th>Rate(₹)</th><th>Qty</th><th>Disc%</th><th>Amount(₹)</th><th>GST(₹)</th><th>Total(₹)</th></tr>
-{''.join(f"<tr><td>{i+1}</td><td>{it['part_no']}</td><td>{it['description']}</td><td>{it['hsn']}</td><td>{it['rate']:.2f}</td><td>{it['qty']}</td><td>{it['discount']:.1f}%</td><td>{it['amount']:,.2f}</td><td>{it['gst_amount']:,.2f}</td><td>{it['final']:,.2f}</td></tr>" for i,it in enumerate(items))}
-<tr class='total-row'><td colspan='9' style='text-align:right'>Grand Total (incl. 18% GST)</td><td>₹ {total:,.2f}</td></tr>
+    <thead>
+        <tr>
+            <th>Sl</th>
+            <th>Description</th>
+            <th>HSN</th>
+            <th>Qty</th>
+            <th>Rate</th>
+            <th>Disc%</th>
+            <th>Amount</th>
+        </tr>
+    </thead>
+    <tbody>
+        {"".join(f"<tr><td class='text-center'>{i+1}</td><td class='text-left'><b>{it['part_no']}</b><br><span style='font-size:12px; color:#555;'>{it['description']}</span></td><td class='text-center'>{it['hsn']}</td><td class='text-center'>{int(it['qty'])}</td><td class='text-right'>₹ {it['rate']:.2f}</td><td class='text-right'>{it['discount']}%</td><td class='text-right'>₹ {it['taxable']:.2f}</td></tr>" for i, it in enumerate(items))}
+    </tbody>
 </table>
-<div style='margin-top:20px;font-size:11px;color:#64748b;'>
-  <b>Note:</b> Rates subject to change. GST @18% included. Valid for 30 days from date of quotation.
+
+<!-- TOTAL -->
+<div class="total-box">
+    <table>
+        <tr>
+            <td>Subtotal</td>
+            <td class="text-right">₹ {subtotal:.2f}</td>
+        </tr>
+        <tr>
+            <td>CGST (9%)</td>
+            <td class="text-right">₹ {cgst:.2f}</td>
+        </tr>
+        <tr>
+            <td>SGST (9%)</td>
+            <td class="text-right">₹ {sgst:.2f}</td>
+        </tr>
+        <tr style="border-top:2px solid black;">
+            <td class="total-bold">Grand Total</td>
+            <td class="text-right total-bold">₹ {total:.2f}</td>
+        </tr>
+    </table>
 </div>
-<br><button onclick='window.print()' style='background:#1e40af;color:#fff;border:none;padding:8px 20px;border-radius:6px;cursor:pointer;'>🖨️ Print / Save PDF</button>
-</body></html>"""
+
+<!-- SIGNATURE -->
+<div class="signature">
+    <p>Authorized Signatory</p>
+    <br><br>
+    _______________________
+</div>
+
+<div style="margin-top:20px; text-align:center;">
+    <button onclick="window.print()" style="background:#1e40af;color:#fff;border:none;padding:10px 28px;border-radius:6px;font-size:14px;cursor:pointer;">🖨️ Print / Save as PDF</button>
+</div>
+
+</body>
+</html>"""
     return HTMLResponse(content=html)
 
 # ----------------------------------------------------------------
@@ -941,11 +1313,15 @@ async def download_pdf(request: Request):
         customer_name = "Walk-In Customer"
         customer_address = ""
         customer_gstin = ""
+        customer_mobile = ""
+        customer_email = ""
     else:
         data = payload.get("rows", payload) if isinstance(payload.get("rows"), list) else payload
         customer_name = payload.get("customer_name", "").strip() or "Walk-In Customer"
         customer_address = payload.get("customer_address", "").strip() or ""
         customer_gstin = payload.get("customer_gstin", "").strip() or ""
+        customer_mobile = payload.get("customer_mobile", "").strip() or ""
+        customer_email = payload.get("customer_email", "").strip() or ""
         if isinstance(data, dict):  # still not right, fall back
             data = [payload] if "part_no" in payload else []
     db = SessionLocal()
@@ -965,6 +1341,28 @@ async def download_pdf(request: Request):
 
             if not product or product.quantity < total_qty:
                 raise ValueError(f"Not enough stock for {part_no}")
+
+        # ===============================
+        # ✅ Save Vendor Details
+        # ===============================
+        if customer_name and customer_name != "Walk-In Customer":
+            c_name = customer_name
+            existing_vendor = db.query(Vendor).filter(Vendor.name == c_name).first()
+            if existing_vendor:
+                if customer_address: existing_vendor.address = customer_address
+                if customer_mobile: existing_vendor.mobile_num = customer_mobile
+                if customer_gstin: existing_vendor.gstin = customer_gstin
+                if customer_email: existing_vendor.email_id = customer_email
+            else:
+                new_vendor = Vendor(
+                    name=c_name,
+                    address=customer_address,
+                    mobile_num=customer_mobile,
+                    gstin=customer_gstin,
+                    email_id=customer_email
+                )
+                db.add(new_vendor)
+            db.commit()
 
         # ===============================
         # ✅ STEP 2: PROCESS + REDUCE STOCK
@@ -999,7 +1397,9 @@ async def download_pdf(request: Request):
                 Product.part_no == row["part_no"]
             ).first()
 
+            purchase_rate = 0.0
             if product:
+                purchase_rate = float(product.rate or 0.0)
                 product.quantity -= qty
 
                 if product.quantity <= 0:
@@ -1008,7 +1408,7 @@ async def download_pdf(request: Request):
                 else:
                     product.amount = (product.quantity * product.rate) - (
                         (product.quantity * product.rate) * (product.discount / 100)
-        )
+                    )
 
             # 🔥 CALCULATIONS
             base = qty * rate
@@ -1024,7 +1424,8 @@ async def download_pdf(request: Request):
                 "qty": qty,
                 "rate": rate,
                 "discount": disc,
-                "taxable": round(taxable, 2)
+                "taxable": round(taxable, 2),
+                "purchase_rate": purchase_rate
             })
 
         # ===============================
@@ -1046,15 +1447,16 @@ async def download_pdf(request: Request):
         if is_postgres:
             result = db.execute(text("""
                 INSERT INTO invoices (
-                    invoice_no, customer_name, customer_address, customer_gstin, date,
+                    invoice_no, customer_name, customer_address, customer_gstin, customer_mobile, customer_email, date,
                     total_amount, gst_amount, grand_total
                 ) VALUES (
-                    :inv, :cust, :address, :gstin, :date,
+                    :inv, :cust, :address, :gstin, :mobile, :email, :date,
                     :total, :gst, :grand
                 ) RETURNING id
             """), {
                 "inv": invoice_no, "cust": customer_name,
                 "address": customer_address, "gstin": customer_gstin,
+                "mobile": customer_mobile, "email": customer_email,
                 "date": datetime.utcnow(),
                 "total": round(subtotal, 2),
                 "gst": cgst + sgst, "grand": total
@@ -1063,15 +1465,16 @@ async def download_pdf(request: Request):
         else:
             result = db.execute(text("""
                 INSERT INTO invoices (
-                    invoice_no, customer_name, customer_address, customer_gstin, date,
+                    invoice_no, customer_name, customer_address, customer_gstin, customer_mobile, customer_email, date,
                     total_amount, gst_amount, grand_total
                 ) VALUES (
-                    :inv, :cust, :address, :gstin, :date,
+                    :inv, :cust, :address, :gstin, :mobile, :email, :date,
                     :total, :gst, :grand
                 )
             """), {
                 "inv": invoice_no, "cust": customer_name,
                 "address": customer_address, "gstin": customer_gstin,
+                "mobile": customer_mobile, "email": customer_email,
                 "date": datetime.utcnow(),
                 "total": round(subtotal, 2),
                 "gst": cgst + sgst, "grand": total
@@ -1081,8 +1484,8 @@ async def download_pdf(request: Request):
         for it in items:
             db.execute(text("""
                 INSERT INTO invoice_items 
-                (invoice_id, part_no, description, quantity, rate, amount, hsn)
-                VALUES (:iid, :p, :d, :q, :r, :amt, :hsn)
+                (invoice_id, part_no, description, quantity, rate, amount, hsn, purchase_rate)
+                VALUES (:iid, :p, :d, :q, :r, :amt, :hsn, :prate)
             """), {
                 "iid": invoice_id,
                 "p": it["part_no"],
@@ -1090,7 +1493,8 @@ async def download_pdf(request: Request):
                 "q": it["qty"],
                 "r": it["rate"],
                 "amt": it["taxable"],
-                "hsn": it["hsn"]
+                "hsn": it["hsn"],
+                "prate": it["purchase_rate"]
             })
 
         db.commit()
@@ -1118,7 +1522,9 @@ async def download_pdf(request: Request):
         date=datetime.now().strftime("%d-%b-%Y"),
         buyer_name=customer_name,
         buyer_address=customer_address,
-        buyer_gstin=customer_gstin
+        buyer_gstin=customer_gstin,
+        buyer_mobile=customer_mobile,
+        buyer_email=customer_email
     )
 
     # config = pdfkit.configuration(
@@ -1163,14 +1569,157 @@ def sales_summary(
         "end": end_date
     }).fetchone()
 
+    profit_query = text("""
+        SELECT 
+            SUM(COALESCE(ii.purchase_rate, 0.0) * ii.quantity) as total_purchase_cost
+        FROM invoice_items ii
+        JOIN invoices i ON ii.invoice_id = i.id
+        WHERE DATE(i.date) BETWEEN :start AND :end
+    """)
+
+    total_cost = db.execute(profit_query, {
+        "start": start_date,
+        "end": end_date
+    }).scalar() or 0.0
+
+    total_sales = float(result.total_sales or 0)
+    total_profit = total_sales - total_cost
+
     db.close()
 
     return {
         "orders": result.total_orders or 0,
-        "sales": float(result.total_sales or 0),
+        "sales": total_sales,
         "gst": float(result.total_gst or 0),
-        "grand_total": float(result.grand_total or 0)
+        "grand_total": float(result.grand_total or 0),
+        "cost": round(total_cost, 2),
+        "profit": round(total_profit, 2)
     }
+
+
+@app.get("/purchase_summary")
+def purchase_summary(
+    start_date: str = Query(...),
+    end_date: str = Query(...),
+    vendor: str = Query("")
+):
+    db = SessionLocal()
+    
+    summary_query = """
+        SELECT 
+            COUNT(*) as total_purchases,
+            SUM(amount) as total_amount
+        FROM purchases
+        WHERE DATE(date) BETWEEN :start AND :end
+    """
+    
+    items_query = """
+        SELECT 
+            id, vendor_name, part_no, description, hsn, quantity, rate, discount, amount, date
+        FROM purchases
+        WHERE DATE(date) BETWEEN :start AND :end
+    """
+    
+    params = {
+        "start": start_date,
+        "end": end_date
+    }
+    
+    if vendor.strip():
+        summary_query += " AND UPPER(vendor_name) = :vendor"
+        items_query += " AND UPPER(vendor_name) = :vendor"
+        params["vendor"] = vendor.strip().upper()
+        
+    items_query += " ORDER BY date DESC"
+    
+    summary_result = db.execute(text(summary_query), params).fetchone()
+    items_result = db.execute(text(items_query), params).fetchall()
+    db.close()
+    
+    return {
+        "count": summary_result.total_purchases or 0,
+        "total_amount": float(summary_result.total_amount or 0.0),
+        "items": [{
+            "id": r.id,
+            "vendor_name": r.vendor_name,
+            "part_no": r.part_no,
+            "description": r.description,
+            "hsn": r.hsn,
+            "quantity": r.quantity,
+            "rate": float(r.rate or 0.0),
+            "discount": float(r.discount or 0.0),
+            "amount": float(r.amount or 0.0),
+            "date": r.date.strftime("%Y-%m-%d %H:%M:%S") if r.date else ""
+        } for r in items_result]
+    }
+
+
+@app.get("/export_purchase_excel")
+def export_purchase_excel(
+    start_date: str = Query(...),
+    end_date: str = Query(...),
+    vendor: str = Query("")
+):
+    db = SessionLocal()
+    
+    items_query = """
+        SELECT 
+            date, vendor_name, part_no, description, hsn, quantity, rate, discount, amount
+        FROM purchases
+        WHERE DATE(date) BETWEEN :start AND :end
+    """
+    
+    params = {
+        "start": start_date,
+        "end": end_date
+    }
+    
+    if vendor.strip():
+        items_query += " AND UPPER(vendor_name) = :vendor"
+        params["vendor"] = vendor.strip().upper()
+        
+    items_query += " ORDER BY date DESC"
+    
+    items_result = db.execute(text(items_query), params).fetchall()
+    db.close()
+    
+    df = pd.DataFrame(items_result, columns=[
+        "Date", "Vendor Name", "Part No", "Description", "HSN", "Quantity", "Rate", "Discount %", "Total Amount"
+    ])
+    
+    if not df.empty and "Date" in df.columns:
+        df["Date"] = pd.to_datetime(df["Date"]).dt.strftime("%Y-%m-%d %H:%M:%S")
+        
+    total_orders = len(df)
+    total_amount = df["Total Amount"].sum() if not df.empty else 0.0
+    
+    summary_df = pd.DataFrame({
+        "Metric": [
+            "Total Purchase Transactions",
+            "Total Purchase Value"
+        ],
+        "Value": [
+            total_orders,
+            total_amount
+        ]
+    })
+    
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        df.to_excel(writer, sheet_name="Purchase Data", index=False)
+        summary_df.to_excel(writer, sheet_name="Summary", index=False)
+        
+    output.seek(0)
+    
+    headers = {
+        'Content-Disposition': f'attachment; filename="purchase_report_{start_date}_to_{end_date}.xlsx"'
+    }
+    
+    return StreamingResponse(
+        output,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers=headers
+    )
 
 
 @app.get("/import_pdf_data")
