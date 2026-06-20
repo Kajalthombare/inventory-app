@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Form, Request, UploadFile, File, Depends
+from fastapi import FastAPI, Form, Request, UploadFile, File, Depends, Query
 from starlette.middleware.sessions import SessionMiddleware
 from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 from sqlalchemy import create_engine, Column, Integer, String, Float, DateTime, case
@@ -422,73 +422,112 @@ import pandas as pd
 import io
 
 @app.get("/export_excel")
-def export_excel(start_date: str, end_date: str):
+def export_excel(
+    start_date: str,
+    end_date: str,
+    customer: str = Query(""),
+    vendor: str = Query("")
+):
     db = SessionLocal()
 
-    query = text("""
-        SELECT 
-            invoice_no,
-            customer_name,
-            total_amount,
-            gst_amount,
-            grand_total,
-            date
-        FROM invoices
-        WHERE DATE(date) BETWEEN :start AND :end
-    """)
-
-    result = db.execute(query, {
+    sql_parts = [
+        "FROM invoice_items ii",
+        "JOIN invoices i ON ii.invoice_id = i.id",
+        "LEFT JOIN products p ON ii.part_no = p.part_no",
+        "WHERE DATE(i.date) BETWEEN :start AND :end"
+    ]
+    
+    params = {
         "start": start_date,
         "end": end_date
-    }).fetchall()
+    }
+    
+    if customer:
+        sql_parts.append("AND LOWER(i.customer_name) LIKE LOWER(:customer)")
+        params["customer"] = f"%{customer}%"
+        
+    if vendor:
+        sql_parts.append("AND p.vendor_name = :vendor")
+        params["vendor"] = vendor
 
-    profit_query = text("""
+    query = text(f"""
         SELECT 
-            SUM(COALESCE(ii.purchase_rate, 0.0) * ii.quantity) as total_purchase_cost
-        FROM invoice_items ii
-        JOIN invoices i ON ii.invoice_id = i.id
-        WHERE DATE(i.date) BETWEEN :start AND :end
+            i.invoice_no,
+            i.customer_name,
+            ii.part_no,
+            ii.description,
+            ii.quantity,
+            ii.rate,
+            ii.amount as taxable_amount,
+            COALESCE(ii.purchase_rate, 0.0) as purchase_rate,
+            i.date
+        {chr(10).join(sql_parts)}
     """)
 
-    total_cost = db.execute(profit_query, {
-        "start": start_date,
-        "end": end_date
-    }).scalar() or 0.0
-
+    result = db.execute(query, params).fetchall()
     db.close()
 
-    df = pd.DataFrame(result, columns=[
-        "Invoice No", "Customer", "Total", "GST", "Grand Total", "Date"
+    # Build list of dicts for pandas
+    rows = []
+    for r in result:
+        taxable = float(r.taxable_amount or 0.0)
+        gst = taxable * 0.18
+        grand = taxable + gst
+        cgst = gst / 2
+        sgst = gst / 2
+        qty = float(r.quantity or 0.0)
+        prate = float(r.purchase_rate or 0.0)
+        pcost = prate * qty
+        profit = taxable - pcost
+        
+        rows.append({
+            "Invoice No": r.invoice_no,
+            "Customer": r.customer_name,
+            "Part No": r.part_no,
+            "Description": r.description,
+            "Qty": qty,
+            "Selling Rate": r.rate,
+            "Taxable Amount": round(taxable, 2),
+            "CGST": round(cgst, 2),
+            "SGST": round(sgst, 2),
+            "Grand Total": round(grand, 2),
+            "Purchase Rate": prate,
+            "Total Purchase Cost": round(pcost, 2),
+            "Profit": round(profit, 2),
+            "Date": r.date.strftime("%Y-%m-%d %H:%M:%S") if r.date else ""
+        })
+
+    df = pd.DataFrame(rows) if rows else pd.DataFrame(columns=[
+        "Invoice No", "Customer", "Part No", "Description", "Qty", "Selling Rate",
+        "Taxable Amount", "CGST", "SGST", "Grand Total", "Purchase Rate", "Total Purchase Cost", "Profit", "Date"
     ])
 
-    df["CGST"] = df["GST"] / 2
-    df["SGST"] = df["GST"] / 2
-
-    total_orders = len(df)
-    total_sales = df["Total"].sum()
-    total_cgst = df["CGST"].sum()
-    total_sgst = df["SGST"].sum()
-    grand_total = df["Grand Total"].sum()
-    total_profit = total_sales - total_cost
+    total_orders = len(df["Invoice No"].unique()) if not df.empty else 0
+    total_sales = df["Taxable Amount"].sum() if not df.empty else 0.0
+    total_cgst = df["CGST"].sum() if not df.empty else 0.0
+    total_sgst = df["SGST"].sum() if not df.empty else 0.0
+    grand_total = df["Grand Total"].sum() if not df.empty else 0.0
+    total_cost = df["Total Purchase Cost"].sum() if not df.empty else 0.0
+    total_profit = df["Profit"].sum() if not df.empty else 0.0
 
     summary_df = pd.DataFrame({
         "Metric": [
             "Total Orders",
-            "Total Sales",
+            "Total Sales (Taxable)",
             "Total CGST",
             "Total SGST",
-            "Grand Total",
+            "Grand Total (incl. GST)",
             "Total Purchase Cost",
             "Total Profit"
         ],
         "Value": [
             total_orders,
-            total_sales,
-            total_cgst,
-            total_sgst,
-            grand_total,
-            total_cost,
-            total_profit
+            round(total_sales, 2),
+            round(total_cgst, 2),
+            round(total_sgst, 2),
+            round(grand_total, 2),
+            round(total_cost, 2),
+            round(total_profit, 2)
         ]
     })
 
@@ -713,6 +752,134 @@ def add_product(
     db.close()
 
     return RedirectResponse("/", status_code=303)
+
+
+@app.post("/add_purchase_bill")
+async def add_purchase_bill(request: Request):
+    data = await request.json()
+    db = SessionLocal()
+    
+    vendor_name = data.get("vendor_name", "").strip()
+    vendor_address = data.get("vendor_address", "").strip()
+    vendor_mobile = data.get("vendor_mobile", "").strip()
+    vendor_gstin = data.get("vendor_gstin", "").strip()
+    vendor_email = data.get("vendor_email", "").strip()
+    items = data.get("items", [])
+    
+    if not items:
+        db.close()
+        return {"error": "No items in purchase bill"}
+        
+    # 1. Save or Update Vendor Details
+    if vendor_name:
+        existing_vendor = db.query(Vendor).filter(Vendor.name == vendor_name).first()
+        if existing_vendor:
+            existing_vendor.address = vendor_address
+            existing_vendor.mobile_num = vendor_mobile
+            existing_vendor.gstin = vendor_gstin
+            existing_vendor.email_id = vendor_email
+        else:
+            new_vendor = Vendor(
+                name=vendor_name,
+                address=vendor_address,
+                mobile_num=vendor_mobile,
+                gstin=vendor_gstin,
+                email_id=vendor_email
+            )
+            db.add(new_vendor)
+        db.commit()
+        
+    # 2. Process items
+    for item in items:
+        part_no = item.get("part_no", "").strip()
+        description = item.get("description", "").strip()
+        hsn = item.get("hsn", "").strip()
+        gst = float(item.get("gst", 18.0) or 18.0)
+        qty = int(item.get("qty", 0) or 0)
+        rate = float(item.get("rate", 0.0) or 0.0)
+        discount = float(item.get("discount", 0.0) or 0.0)
+        
+        if not part_no:
+            continue
+            
+        # Rate fallback if not provided or 0
+        if rate <= 0:
+            price = db.query(OrderItems).filter(OrderItems.part_no == part_no).first()
+            if price and price.mrp > 0:
+                rate = price.mrp
+                
+        # Record Purchase if qty > 0
+        if qty > 0:
+            purchase_amt = (qty * rate) - ((qty * rate) * (discount / 100))
+            new_purchase = Purchase(
+                vendor_name=vendor_name if vendor_name else "Local Vendor",
+                part_no=part_no,
+                description=description,
+                hsn=hsn,
+                quantity=qty,
+                rate=rate,
+                discount=discount,
+                amount=round(purchase_amt, 2),
+                date=datetime.now()
+            )
+            db.add(new_purchase)
+            
+        # Update or Create Product Stock
+        existing = db.query(Product).filter(Product.part_no == part_no).first()
+        if existing:
+            existing.quantity += qty
+            if rate > 0:
+                existing.rate = rate
+            if description:
+                existing.description = description
+            if hsn:
+                existing.hsn = hsn
+            existing.gst = gst
+            existing.discount = discount
+            
+            # Recalculate amount
+            if existing.quantity <= 0:
+                existing.quantity = 0
+                existing.amount = 0
+            else:
+                existing.amount = (existing.quantity * existing.rate) - (
+                    (existing.quantity * existing.rate) * (existing.discount / 100)
+                )
+                
+            # Update vendor details on product
+            if vendor_name:
+                existing.vendor_name = vendor_name
+                existing.vendor_address = vendor_address
+                existing.vendor_mobile = vendor_mobile
+                existing.vendor_gstin = vendor_gstin
+                existing.vendor_email = vendor_email
+        else:
+            # new product
+            if qty <= 0:
+                amount = 0
+            else:
+                amount = (qty * rate) - ((qty * rate) * (discount / 100))
+                
+            new_product = Product(
+                part_no=part_no,
+                description=description,
+                hsn=hsn,
+                gst=gst,
+                quantity=qty,
+                rate=rate,
+                discount=discount,
+                amount=round(amount, 2),
+                vendor_name=vendor_name,
+                vendor_address=vendor_address,
+                vendor_mobile=vendor_mobile,
+                vendor_gstin=vendor_gstin,
+                vendor_email=vendor_email
+            )
+            db.add(new_product)
+            
+    db.commit()
+    db.close()
+    return {"ok": True}
 
 # ---------------- GET PRICE ----------------
 
@@ -1550,48 +1717,55 @@ from datetime import datetime
 @app.get("/sales_summary")
 def sales_summary(
     start_date: str = Query(...),
-    end_date: str = Query(...)
+    end_date: str = Query(...),
+    customer: str = Query(""),
+    vendor: str = Query("")
 ):
     db = SessionLocal()
 
-    query = text("""
-        SELECT 
-            COUNT(*) as total_orders,
-            SUM(total_amount) as total_sales,
-            SUM(gst_amount) as total_gst,
-            SUM(grand_total) as grand_total
-        FROM invoices
-        WHERE DATE(date) BETWEEN :start AND :end
-    """)
-
-    result = db.execute(query, {
+    sql_parts = [
+        "FROM invoice_items ii",
+        "JOIN invoices i ON ii.invoice_id = i.id",
+        "LEFT JOIN products p ON ii.part_no = p.part_no",
+        "WHERE DATE(i.date) BETWEEN :start AND :end"
+    ]
+    
+    params = {
         "start": start_date,
         "end": end_date
-    }).fetchone()
+    }
+    
+    if customer:
+        sql_parts.append("AND LOWER(i.customer_name) LIKE LOWER(:customer)")
+        params["customer"] = f"%{customer}%"
+        
+    if vendor:
+        sql_parts.append("AND p.vendor_name = :vendor")
+        params["vendor"] = vendor
 
-    profit_query = text("""
+    query_str = f"""
         SELECT 
-            SUM(COALESCE(ii.purchase_rate, 0.0) * ii.quantity) as total_purchase_cost
-        FROM invoice_items ii
-        JOIN invoices i ON ii.invoice_id = i.id
-        WHERE DATE(i.date) BETWEEN :start AND :end
-    """)
-
-    total_cost = db.execute(profit_query, {
-        "start": start_date,
-        "end": end_date
-    }).scalar() or 0.0
-
-    total_sales = float(result.total_sales or 0)
+            COUNT(DISTINCT i.id) as total_orders,
+            SUM(ii.amount) as total_sales,
+            SUM(COALESCE(ii.purchase_rate, 0.0) * ii.quantity) as total_cost
+        {chr(10).join(sql_parts)}
+    """
+    
+    result = db.execute(text(query_str), params).fetchone()
+    
+    total_sales = float(result.total_sales or 0.0)
+    total_cost = float(result.total_cost or 0.0)
+    total_gst = total_sales * 0.18
+    grand_total = total_sales + total_gst
     total_profit = total_sales - total_cost
-
+    
     db.close()
-
+    
     return {
         "orders": result.total_orders or 0,
-        "sales": total_sales,
-        "gst": float(result.total_gst or 0),
-        "grand_total": float(result.grand_total or 0),
+        "sales": round(total_sales, 2),
+        "gst": round(total_gst, 2),
+        "grand_total": round(grand_total, 2),
         "cost": round(total_cost, 2),
         "profit": round(total_profit, 2)
     }

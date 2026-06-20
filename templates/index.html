@@ -605,7 +605,7 @@
         </a>
 
         <div class="nav-section-label" style="margin-top:8px;">Tools</div>
-        <a class="nav-item" href="#add-product-section">
+        <a class="nav-item" href="#stock-section" onclick="focusAddStockForm()">
             <span class="nav-icon">➕</span> Stock Add/Update
         </a>
         <a class="nav-item" href="#upload-section">
@@ -670,7 +670,7 @@
                 <button onclick="exportExcel()" class="btn btn-warning btn-sm">⬇ Export Excel</button>
             </div>
             <div class="section-body">
-                <div class="form-row">
+                <div class="form-row" style="margin-bottom:16px;">
                     <div class="form-field">
                         <label>From Date</label>
                         <input type="date" id="start_date" class="form-input">
@@ -678,6 +678,16 @@
                     <div class="form-field">
                         <label>To Date</label>
                         <input type="date" id="end_date" class="form-input">
+                    </div>
+                    <div class="form-field" style="position:relative; min-width:200px;">
+                        <label>Customer / Party Name</label>
+                        <input type="text" id="sales_customer_search" class="form-input" placeholder="All Customers" autocomplete="off">
+                        <div id="sales_customer_ac" class="ac-list"></div>
+                    </div>
+                    <div class="form-field" style="position:relative; min-width:200px;">
+                        <label>Vendor Name</label>
+                        <input type="text" id="sales_vendor_search" class="form-input" placeholder="All Vendors" autocomplete="off">
+                        <div id="sales_vendor_ac" class="ac-list"></div>
                     </div>
                     <button onclick="getSales()" class="btn btn-primary" style="margin-bottom:1px;">Check Sales</button>
                     <div class="date-pills" style="margin-bottom:1px;">
@@ -779,78 +789,7 @@
             </div>
         </div>
 
-        <!-- ── ADD PRODUCT ── -->
-        <div class="section-card" id="add-product-section">
-            <div class="section-header">
-                <div class="section-title">➕ Stock Add/Update Product</div>
-            </div>
-            <div class="section-body">
-                <form action="/add" method="post">
-                    <div class="form-row" style="margin-bottom:12px;">
-                        <div class="form-field" style="min-width:130px;">
-                            <label>Part No</label>
-                            <input id="part_no_input" name="part_no" class="form-input" placeholder="Part No" required>
-                        </div>
-                        <div class="form-field" style="flex:1;min-width:160px;">
-                            <label>Description</label>
-                            <input name="description" class="form-input" placeholder="Description" required>
-                        </div>
-                        <div class="form-field" style="min-width:100px;">
-                            <label>HSN</label>
-                            <input name="hsn" class="form-input" placeholder="HSN">
-                        </div>
-                        <div class="form-field" style="min-width:70px;">
-                            <label>GST %</label>
-                            <input name="gst" value="18" class="form-input">
-                        </div>
-                        <div class="form-field" style="min-width:80px;">
-                            <label>Qty</label>
-                            <input name="quantity" type="number" class="form-input" placeholder="0">
-                        </div>
-                        <div class="form-field" style="min-width:90px;">
-                            <label>Rate (₹)</label>
-                            <input name="rate" type="number" class="form-input" placeholder="0">
-                        </div>
-                        <div class="form-field" style="min-width:80px;">
-                            <label>Disc %</label>
-                            <input name="discount" type="number" class="form-input" placeholder="0">
-                        </div>
-                        <div class="form-field" style="min-width:100px;">
-                            <label>Amount</label>
-                            <input name="amount" type="number" class="form-input" placeholder="0" readonly style="background:#f8fafc;">
-                        </div>
-                    </div>
-                    
-                    <div style="font-size:12px;font-weight:600;margin:12px 0 6px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;">Vendor Details (For Purchase Logging)</div>
-                    <div class="form-row">
-                        <div class="form-field" style="position:relative;flex:2;">
-                            <label>Vendor Name</label>
-                            <input id="v_name_input" name="vendor_name" class="form-input" placeholder="Vendor Name (optional)" autocomplete="off">
-                            <div id="v_name_ac" class="ac-list"></div>
-                        </div>
-                        <div class="form-field" style="flex:2;">
-                            <label>Address</label>
-                            <input id="v_addr_input" name="vendor_address" class="form-input" placeholder="Address">
-                        </div>
-                        <div class="form-field" style="flex:1;">
-                            <label>Mobile Num</label>
-                            <input id="v_mobile_input" name="vendor_mobile" class="form-input" placeholder="Mobile">
-                        </div>
-                        <div class="form-field" style="flex:1;">
-                            <label>GSTIN</label>
-                            <input id="v_gstin_input" name="vendor_gstin" class="form-input" placeholder="GSTIN">
-                        </div>
-                        <div class="form-field" style="flex:1.5;">
-                            <label>Email ID</label>
-                            <input id="v_email_input" name="vendor_email" class="form-input" placeholder="Email">
-                        </div>
-                        <div class="form-field" style="justify-content:flex-end;align-items:flex-end;padding-bottom:1px;min-width:90px;">
-                            <button type="submit" class="btn btn-primary" style="width:100%;height:38px;">Add</button>
-                        </div>
-                    </div>
-                </form>
-            </div>
-        </div>
+
 
         <!-- ── QUOTATION ── -->
         <!-- ══ QUOTATION (no stock change) ══ -->
@@ -1028,88 +967,153 @@
             </div>
         </div>
 
-        <!-- ── PRODUCT TABLE ── -->
-        <div class="section-card" id="stock-section">
-            <div class="section-header">
-                <div class="section-title">🗃 Stock Data</div>
-                <span style="font-size:12px;color:var(--text-muted);">Total Value: <strong>₹ {{ total_value }}</strong></span>
-            </div>
-            <div class="table-wrap">
-                <table class="data-table" id="productTable">
-                    <thead>
-                        <tr>
-                            <th>Part No</th>
-                            <th>Description</th>
-                            <th>HSN</th>
-                            <th>GST %</th>
-                            <th>Qty</th>
-                            <th>Purchase Rate (₹)</th>
-                            <th>Disc %</th>
-                            <th>Amount (₹)</th>
-                            <th>Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                    {% for p in products %}
-                        <tr>
-                            <td style="font-weight:600;">{{ p.part_no }}</td>
-                            <td style="color:var(--text-muted);">{{ p.description }}</td>
-                            <td>{{ p.hsn }}</td>
-                            <td>{{ p.gst }}%</td>
-                            <td>
-                                {% if p.quantity == 0 %}
-                                    <span class="badge badge-danger">Out of Stock</span>
-                                {% elif p.quantity < 5 %}
-                                    <span class="badge badge-warning">{{ p.quantity }}</span>
-                                {% else %}
-                                    <span class="badge badge-success">{{ p.quantity }}</span>
-                                {% endif %}
-                            </td>
-                            <td>{{ "%.2f"|format(p.rate or 0) }}</td>
-                            <td>{{ p.discount or 0 }}%</td>
-                            <td style="font-weight:600;">
-                                {% if p.quantity == 0 %}0.00
-                                {% else %}{{ "%.2f"|format(p.amount or 0) }}
-                                {% endif %}
-                            </td>
-                            <td>
-                                <div class="actions-group">
-                                    <form action="/issue/{{p.id}}" method="post" onsubmit="return reloadPage()" style="display:flex;gap:4px;align-items:center;">
-                                        <input name="qty" type="number" min="1" max="{{p.quantity}}" required class="qty-input"
-                                            {% if p.quantity == 0 %}disabled{% endif %}>
-                                        <button class="btn btn-danger btn-sm" {% if p.quantity == 0 %}disabled{% endif %} title="Issue">−</button>
-                                    </form>
-                                    <form action="/add_stock/{{p.id}}" method="post" onsubmit="return reloadPage()" style="display:flex;gap:4px;align-items:center;">
-                                        <input name="qty" type="number" min="1" required class="qty-input">
-                                        <button class="btn btn-success btn-sm" title="Add Stock">+</button>
-                                    </form>
-                                </div>
-                            </td>
-                        </tr>
-                    {% endfor %}
-                    </tbody>
-                </table>
+        <!-- ── STOCK SECTION (Consolidated Container) ── -->
+        <div id="stock-section" style="display: none;">
+            <!-- ── ADD PRODUCT (Purchase Entry Card) ── -->
+            <div class="section-card" id="stock-add-card" style="display: block; margin-bottom: 24px;">
+                <div class="section-header">
+                    <div class="section-title">➕ Stock Purchase (Bill Entry)</div>
+                    <div style="display:flex;gap:8px;">
+                        <button onclick="addPurchaseRow()" class="btn btn-ghost btn-sm">+ Add Row</button>
+                        <button onclick="saveStockPurchase()" class="btn btn-primary btn-sm">💾 Save Stock Purchase</button>
+                    </div>
+                </div>
+                <div class="section-body">
+                    <div class="form-row" style="margin-bottom:16px; gap:12px;">
+                        <div class="form-field" style="position:relative; flex:2; min-width:200px;">
+                            <label>Vendor Name</label>
+                            <input type="text" id="purchase-vendor-name" class="form-input" placeholder="Enter or select vendor" autocomplete="off" required>
+                            <div id="purchase-vendor-ac" class="ac-list"></div>
+                        </div>
+                        <div class="form-field" style="flex:2; min-width:200px;">
+                            <label>Address</label>
+                            <input type="text" id="purchase-vendor-address" class="form-input" placeholder="Vendor Address">
+                        </div>
+                        <div class="form-field" style="flex:1; min-width:130px;">
+                            <label>Mobile Num</label>
+                            <input type="text" id="purchase-vendor-mobile" class="form-input" placeholder="Mobile">
+                        </div>
+                        <div class="form-field" style="flex:1; min-width:130px;">
+                            <label>GSTIN</label>
+                            <input type="text" id="purchase-vendor-gstin" class="form-input" placeholder="GSTIN">
+                        </div>
+                        <div class="form-field" style="flex:1.5; min-width:180px;">
+                            <label>Email ID</label>
+                            <input type="email" id="purchase-vendor-email" class="form-input" placeholder="Email">
+                        </div>
+                    </div>
+
+                    <div class="table-wrap">
+                        <table class="data-table" id="purchase_table">
+                            <thead>
+                                <tr>
+                                    <th style="width: 200px;">Part No</th>
+                                    <th>Description</th>
+                                    <th style="width: 110px;">HSN</th>
+                                    <th style="width: 80px;">GST %</th>
+                                    <th style="width: 90px;">Qty</th>
+                                    <th style="width: 120px;">Rate (₹)</th>
+                                    <th style="width: 80px;">Disc %</th>
+                                    <th style="width: 130px;">Total (₹)</th>
+                                    <th style="width: 50px;"></th>
+                                </tr>
+                            </thead>
+                            <tbody id="purchase_body">
+                                <!-- Dynamic rows will be rendered here -->
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <div class="grand-total-row">
+                        <span class="grand-total-label">Grand Total (incl. GST)</span>
+                        <span class="grand-total-value">₹ <span id="purchase_grand_total">0.00</span></span>
+                    </div>
+                </div>
             </div>
 
-            <!-- Stock Table Pagination -->
-            {% if total_pages > 1 %}
-            <div style="display:flex;gap:8px;padding:16px 20px;align-items:center;justify-content:space-between;border-top:1px solid var(--border);">
-                <div style="font-size:12px;color:var(--text-muted);">
-                    Showing page <strong>{{ current_page }}</strong> of {{ total_pages }} (Total {{ total_items }} items)
+            <!-- ── PRODUCT TABLE (Stock Data Card) ── -->
+            <div class="section-card" id="stock-data-card" style="display: block;">
+                <div class="section-header">
+                    <div class="section-title">🗃 Stock Data</div>
+                    <span style="font-size:12px;color:var(--text-muted);">Total Value: <strong>₹ {{ total_value }}</strong></span>
                 </div>
-                <div style="display:flex;gap:6px;">
-                    {% if current_page > 1 %}
-                        <a href="/?page=1&q={{ q }}" class="btn btn-ghost btn-sm">First</a>
-                        <a href="/?page={{ current_page - 1 }}&q={{ q }}" class="btn btn-ghost btn-sm">← Prev</a>
-                    {% endif %}
-                    <span style="font-size:12px;font-weight:600;padding:6px 12px;background:var(--primary-light);color:var(--primary);border-radius:6px;">{{ current_page }}</span>
-                    {% if current_page < total_pages %}
-                        <a href="/?page={{ current_page + 1 }}&q={{ q }}" class="btn btn-ghost btn-sm">Next →</a>
-                        <a href="/?page={{ total_pages }}&q={{ q }}" class="btn btn-ghost btn-sm">Last</a>
-                    {% endif %}
+                <div class="table-wrap">
+                    <table class="data-table" id="productTable">
+                        <thead>
+                            <tr>
+                                <th>Part No</th>
+                                <th>Description</th>
+                                <th>HSN</th>
+                                <th>GST %</th>
+                                <th>Qty</th>
+                                <th>Purchase Rate (₹)</th>
+                                <th>Disc %</th>
+                                <th>Amount (₹)</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                        {% for p in products %}
+                            <tr>
+                                <td style="font-weight:600;">{{ p.part_no }}</td>
+                                <td style="color:var(--text-muted);">{{ p.description }}</td>
+                                <td>{{ p.hsn }}</td>
+                                <td>{{ p.gst }}%</td>
+                                <td>
+                                    {% if p.quantity == 0 %}
+                                        <span class="badge badge-danger">Out of Stock</span>
+                                    {% elif p.quantity < 5 %}
+                                        <span class="badge badge-warning">{{ p.quantity }}</span>
+                                    {% else %}
+                                        <span class="badge badge-success">{{ p.quantity }}</span>
+                                    {% endif %}
+                                </td>
+                                <td>{{ "%.2f"|format(p.rate or 0) }}</td>
+                                <td>{{ p.discount or 0 }}%</td>
+                                <td style="font-weight:600;">
+                                    {% if p.quantity == 0 %}0.00
+                                    {% else %}{{ "%.2f"|format(p.amount or 0) }}
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    <div class="actions-group">
+                                        <form action="/issue/{{p.id}}" method="post" onsubmit="return reloadPage()" style="display:flex;gap:4px;align-items:center;">
+                                            <input name="qty" type="number" min="1" max="{{p.quantity}}" required class="qty-input"
+                                                {% if p.quantity == 0 %}disabled{% endif %}>
+                                            <button class="btn btn-danger btn-sm" {% if p.quantity == 0 %}disabled{% endif %} title="Issue">−</button>
+                                        </form>
+                                        <form action="/add_stock/{{p.id}}" method="post" onsubmit="return reloadPage()" style="display:flex;gap:4px;align-items:center;">
+                                            <input name="qty" type="number" min="1" required class="qty-input">
+                                            <button class="btn btn-success btn-sm" title="Add Stock">+</button>
+                                        </form>
+                                    </div>
+                                </td>
+                            </tr>
+                        {% endfor %}
+                        </tbody>
+                    </table>
                 </div>
+
+                <!-- Stock Table Pagination -->
+                {% if total_pages > 1 %}
+                <div style="display:flex;gap:8px;padding:16px 20px;align-items:center;justify-content:space-between;border-top:1px solid var(--border);">
+                    <div style="font-size:12px;color:var(--text-muted);">
+                        Showing page <strong>{{ current_page }}</strong> of {{ total_pages }} (Total {{ total_items }} items)
+                    </div>
+                    <div style="display:flex;gap:6px;">
+                        {% if current_page > 1 %}
+                            <a href="/?page=1&q={{ q }}" class="btn btn-ghost btn-sm">First</a>
+                            <a href="/?page={{ current_page - 1 }}&q={{ q }}" class="btn btn-ghost btn-sm">← Prev</a>
+                        {% endif %}
+                        <span style="font-size:12px;font-weight:600;padding:6px 12px;background:var(--primary-light);color:var(--primary);border-radius:6px;">{{ current_page }}</span>
+                        {% if current_page < total_pages %}
+                            <a href="/?page={{ current_page + 1 }}&q={{ q }}" class="btn btn-ghost btn-sm">Next →</a>
+                            <a href="/?page={{ total_pages }}&q={{ q }}" class="btn btn-ghost btn-sm">Last</a>
+                        {% endif %}
+                    </div>
+                </div>
+                {% endif %}
             </div>
-            {% endif %}
         </div>
 
     </div><!-- /page-body -->
@@ -1126,45 +1130,171 @@ document.getElementById('search').addEventListener('keypress', function(e){
     }
 });
 
-// ── Auto fetch rate ──
-document.getElementById('part_no_input').addEventListener('change', async function(){
-    const res = await fetch(`/get_price/${this.value}`);
+// ── Stock Purchase Multi-Item Entry Logic ──
+let purchaseRows = [];
+
+function addPurchaseRow() {
+    purchaseRows.push({ part_no: '', description: '', hsn: '', gst: 18.0, qty: 1, rate: 0.0, discount: 0.0 });
+    renderPurchaseRows();
+}
+
+function renderPurchaseRows() {
+    let html = '', grand = 0;
+    purchaseRows.forEach((r, i) => {
+        const sub = r.rate * r.qty;
+        const disc = sub * (r.discount / 100);
+        const total = (sub - disc) * (1 + (r.gst / 100));
+        grand += total;
+
+        html += `<tr>
+            <td style="position:relative;">
+                <input id="purchase-pno-${i}" value="${r.part_no}"
+                    oninput="acSearch(this, document.getElementById('purchase-ac-${i}'), d => {
+                        purchaseRows[${i}].part_no = d.part_no;
+                        purchaseRows[${i}].description = d.description;
+                        purchaseRows[${i}].rate = d.rate;
+                        purchaseRows[${i}].hsn = d.hsn;
+                        fetchPurchasePartDetails(${i});
+                    })"
+                    onblur="purchaseRows[${i}].part_no = this.value.trim().toUpperCase(); this.value = purchaseRows[${i}].part_no; if(purchaseRows[${i}].part_no) fetchPurchasePartDetails(${i});"
+                    class="q-table-input" placeholder="Part No or search…">
+                <div id="purchase-ac-${i}" class="ac-list"></div>
+            </td>
+            <td>
+                <input type="text" value="${r.description}"
+                    onchange="purchaseRows[${i}].description = this.value; renderPurchaseRows();"
+                    class="q-table-input" placeholder="Description">
+            </td>
+            <td>
+                <input type="text" value="${r.hsn}"
+                    onchange="purchaseRows[${i}].hsn = this.value; renderPurchaseRows();"
+                    class="q-table-input" placeholder="HSN" style="width:100px;">
+            </td>
+            <td>
+                <input type="number" value="${r.gst}" min="0" max="100"
+                    onchange="purchaseRows[${i}].gst = parseFloat(this.value) || 0; renderPurchaseRows();"
+                    class="q-table-input" style="width:65px;">
+            </td>
+            <td>
+                <input type="number" value="${r.qty}" min="1"
+                    onchange="purchaseRows[${i}].qty = parseFloat(this.value) || 0; renderPurchaseRows();"
+                    class="q-table-input" style="width:70px;">
+            </td>
+            <td>
+                <input type="number" value="${r.rate}" min="0" step="any"
+                    onchange="purchaseRows[${i}].rate = parseFloat(this.value) || 0; renderPurchaseRows();"
+                    class="q-table-input" style="width:100px;">
+            </td>
+            <td>
+                <input type="number" value="${r.discount}" min="0" max="100"
+                    onchange="purchaseRows[${i}].discount = parseFloat(this.value) || 0; renderPurchaseRows();"
+                    class="q-table-input" style="width:65px;">
+            </td>
+            <td style="font-weight:700; color:var(--primary);">₹ ${total.toFixed(2)}</td>
+            <td>
+                <button onclick="purchaseRows.splice(${i}, 1); renderPurchaseRows();" class="btn btn-ghost btn-sm">✕</button>
+            </td>
+        </tr>`;
+    });
+
+    document.getElementById('purchase_body').innerHTML = html;
+    document.getElementById('purchase_grand_total').textContent = grand.toFixed(2);
+}
+
+async function fetchPurchasePartDetails(i) {
+    if (!purchaseRows[i].part_no) return;
+    const res = await fetch(`/get_price/${encodeURIComponent(purchaseRows[i].part_no)}`);
     const data = await res.json();
     if (!data.error) {
-        document.querySelector('[name="description"]').value = data.description || '';
-        document.querySelector('[name="rate"]').value = data.rate || 0;
-        document.querySelector('[name="hsn"]').value = data.hsn || '';
+        if (data.description) purchaseRows[i].description = data.description;
+        if (data.rate && data.rate > 0) purchaseRows[i].rate = data.rate;
+        if (data.hsn) purchaseRows[i].hsn = data.hsn;
         
-        // Auto-fill vendor details if they exist in the product record
-        if (data.vendor_name) {
-            document.getElementById('v_name_input').value = data.vendor_name;
-            document.getElementById('v_addr_input').value = data.vendor_address || '';
-            document.getElementById('v_mobile_input').value = data.vendor_mobile || '';
-            document.getElementById('v_gstin_input').value = data.vendor_gstin || '';
-            document.getElementById('v_email_input').value = data.vendor_email || '';
+        // Auto-fill vendor details at the top if they are empty
+        const vNameInput = document.getElementById('purchase-vendor-name');
+        if (vNameInput && !vNameInput.value.trim() && data.vendor_name) {
+            vNameInput.value = data.vendor_name;
+            document.getElementById('purchase-vendor-address').value = data.vendor_address || '';
+            document.getElementById('purchase-vendor-mobile').value = data.vendor_mobile || '';
+            document.getElementById('purchase-vendor-gstin').value = data.vendor_gstin || '';
+            document.getElementById('purchase-vendor-email').value = data.vendor_email || '';
         }
-        calculateAmount();
     }
-});
-
-// ── Calculate amount ──
-function calculateAmount(){
-    const qty  = parseFloat(document.querySelector('[name="quantity"]').value) || 0;
-    const rate = parseFloat(document.querySelector('[name="rate"]').value) || 0;
-    const disc = parseFloat(document.querySelector('[name="discount"]').value) || 0;
-    const amount = (qty * rate) - (qty * rate * disc / 100);
-    document.querySelector('[name="amount"]').value = amount.toFixed(2);
+    renderPurchaseRows();
 }
-document.querySelector('[name="quantity"]').addEventListener('input', calculateAmount);
-document.querySelector('[name="rate"]').addEventListener('input', calculateAmount);
-document.querySelector('[name="discount"]').addEventListener('input', calculateAmount);
+
+async function saveStockPurchase() {
+    const vendor_name = document.getElementById('purchase-vendor-name').value.trim();
+    if (!vendor_name) {
+        alert('Please enter a Vendor Name');
+        return;
+    }
+    const filtered = purchaseRows.filter(r => r.part_no.trim() && r.qty > 0);
+    if (!filtered.length) {
+        alert('Please add at least one item with a part number and quantity > 0');
+        return;
+    }
+
+    const payload = {
+        vendor_name: vendor_name,
+        vendor_address: document.getElementById('purchase-vendor-address').value.trim(),
+        vendor_mobile: document.getElementById('purchase-vendor-mobile').value.trim(),
+        vendor_gstin: document.getElementById('purchase-vendor-gstin').value.trim(),
+        vendor_email: document.getElementById('purchase-vendor-email').value.trim(),
+        items: filtered.map(r => ({
+            part_no: r.part_no,
+            description: r.description,
+            hsn: r.hsn,
+            gst: r.gst,
+            qty: r.qty,
+            rate: r.rate,
+            discount: r.discount
+        }))
+    };
+
+    try {
+        const res = await fetch('/add_purchase_bill', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        if (data.ok) {
+            alert('Stock purchase saved successfully!');
+            location.reload();
+        } else {
+            alert('Error: ' + (data.error || 'Unknown error occurred'));
+        }
+    } catch (e) {
+        alert('Network/Server error: ' + e);
+    }
+}
+
+function focusAddStockForm() {
+    if (window.location.hash !== '#stock-section') {
+        window.location.hash = '#stock-section';
+    }
+    setTimeout(() => {
+        const vendorInput = document.getElementById('purchase-vendor-name');
+        if (vendorInput) {
+            vendorInput.focus();
+            vendorInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+    }, 150);
+}
+
+// Initialize the first row
+addPurchaseRow();
 
 // ── Sales ──
 async function getSales(){
     const start = document.getElementById('start_date').value;
     const end   = document.getElementById('end_date').value;
     if (!start || !end) { alert('Select both dates'); return; }
-    const data = await (await fetch(`/sales_summary?start_date=${start}&end_date=${end}`)).json();
+    const customer = (document.getElementById('sales_customer_search')?.value || '').trim();
+    const vendor   = (document.getElementById('sales_vendor_search')?.value || '').trim();
+    const url = `/sales_summary?start_date=${start}&end_date=${end}&customer=${encodeURIComponent(customer)}&vendor=${encodeURIComponent(vendor)}`;
+    const data = await (await fetch(url)).json();
     document.getElementById('total_orders').textContent = data.orders;
     document.getElementById('total_sales').textContent  = new Intl.NumberFormat('en-IN').format(data.sales);
     const gst = data.gst || 0;
@@ -1220,7 +1350,9 @@ function exportExcel(){
     const s = document.getElementById('start_date').value;
     const e = document.getElementById('end_date').value;
     if (!s || !e) { alert('Select dates first'); return; }
-    window.open(`/export_excel?start_date=${s}&end_date=${e}`);
+    const customer = (document.getElementById('sales_customer_search')?.value || '').trim();
+    const vendor   = (document.getElementById('sales_vendor_search')?.value || '').trim();
+    window.open(`/export_excel?start_date=${s}&end_date=${e}&customer=${encodeURIComponent(customer)}&vendor=${encodeURIComponent(vendor)}`);
 }
 
 async function getPurchases(){
@@ -1350,34 +1482,55 @@ document.addEventListener('click', e => {
 });
 
 // Hook up autocomplete inputs
-document.getElementById('v_name_input').addEventListener('input', function() {
-    acVendorSearch(this, document.getElementById('v_name_ac'), d => {
-        document.getElementById('v_name_input').value = d.name;
-        document.getElementById('v_addr_input').value = d.address;
-        document.getElementById('v_mobile_input').value = d.mobile_num;
-        document.getElementById('v_gstin_input').value = d.gstin;
-        document.getElementById('v_email_input').value = d.email_id;
+const pVendorInput = document.getElementById('purchase-vendor-name');
+if (pVendorInput) {
+    pVendorInput.addEventListener('input', function() {
+        acVendorSearch(this, document.getElementById('purchase-vendor-ac'), d => {
+            document.getElementById('purchase-vendor-name').value = d.name || '';
+            document.getElementById('purchase-vendor-address').value = d.address || '';
+            document.getElementById('purchase-vendor-mobile').value = d.mobile_num || '';
+            document.getElementById('purchase-vendor-gstin').value = d.gstin || '';
+            document.getElementById('purchase-vendor-email').value = d.email_id || '';
+        });
     });
-});
 
-document.getElementById('v_name_input').addEventListener('change', async function() {
-    const val = this.value.trim();
-    if (val.length < 2) return;
-    
-    // Fetch matching vendors
-    const res = await fetch(`/search_vendors?q=${encodeURIComponent(val)}`);
-    const data = await res.json();
-    
-    // Check if there is an exact match (case insensitive)
-    const exact = data.find(d => d.name.toLowerCase() === val.toLowerCase());
-    if (exact) {
-        document.getElementById('v_name_input').value = exact.name;
-        document.getElementById('v_addr_input').value = exact.address;
-        document.getElementById('v_mobile_input').value = exact.mobile_num;
-        document.getElementById('v_gstin_input').value = exact.gstin;
-        document.getElementById('v_email_input').value = exact.email_id;
-    }
-});
+    pVendorInput.addEventListener('change', async function() {
+        const val = this.value.trim();
+        if (val.length < 2) return;
+        
+        // Fetch matching vendors
+        const res = await fetch(`/search_vendors?q=${encodeURIComponent(val)}`);
+        const data = await res.json();
+        
+        // Check if there is an exact match (case insensitive)
+        const exact = data.find(d => d.name.toLowerCase() === val.toLowerCase());
+        if (exact) {
+            document.getElementById('purchase-vendor-name').value = exact.name || '';
+            document.getElementById('purchase-vendor-address').value = exact.address || '';
+            document.getElementById('purchase-vendor-mobile').value = exact.mobile_num || '';
+            document.getElementById('purchase-vendor-gstin').value = exact.gstin || '';
+            document.getElementById('purchase-vendor-email').value = exact.email_id || '';
+        }
+    });
+}
+
+const salesCustInput = document.getElementById('sales_customer_search');
+if (salesCustInput) {
+    salesCustInput.addEventListener('input', function() {
+        acVendorSearch(this, document.getElementById('sales_customer_ac'), d => {
+            document.getElementById('sales_customer_search').value = d.name || '';
+        });
+    });
+}
+
+const salesVendInput = document.getElementById('sales_vendor_search');
+if (salesVendInput) {
+    salesVendInput.addEventListener('input', function() {
+        acVendorSearch(this, document.getElementById('sales_vendor_ac'), d => {
+            document.getElementById('sales_vendor_search').value = d.name || '';
+        });
+    });
+}
 
 document.getElementById('q_customer').addEventListener('input', function() {
     acVendorSearch(this, document.getElementById('q_customer_ac'), d => {
@@ -1686,7 +1839,6 @@ function initTabs() {
         'quotation-section',
         'invoice-section',
         'price-master-section',
-        'add-product-section',
         'upload-section'
     ];
 
