@@ -1758,7 +1758,52 @@ def sales_summary(
     total_gst = total_sales * 0.18
     grand_total = total_sales + total_gst
     total_profit = total_sales - total_cost
+
+    # Fetch detailed sales list
+    items_query = text(f"""
+        SELECT 
+            i.invoice_no,
+            i.customer_name,
+            ii.part_no,
+            ii.description,
+            ii.quantity,
+            ii.rate,
+            ii.amount as taxable_amount,
+            COALESCE(ii.purchase_rate, 0.0) as purchase_rate,
+            i.date
+        {chr(10).join(sql_parts)}
+        ORDER BY i.date DESC
+    """)
+    items_result = db.execute(items_query, params).fetchall()
     
+    items_list = []
+    for r in items_result:
+        taxable = float(r.taxable_amount or 0.0)
+        gst = taxable * 0.18
+        cgst = gst / 2
+        sgst = gst / 2
+        grand = taxable + gst
+        qty = float(r.quantity or 0.0)
+        prate = float(r.purchase_rate or 0.0)
+        pcost = prate * qty
+        profit = taxable - pcost
+        items_list.append({
+            "date": r.date.strftime("%Y-%m-%d %H:%M:%S") if r.date else "",
+            "invoice_no": r.invoice_no,
+            "customer_name": r.customer_name,
+            "part_no": r.part_no,
+            "description": r.description,
+            "qty": qty,
+            "rate": round(r.rate, 2) if r.rate else 0.0,
+            "taxable": round(taxable, 2),
+            "cgst": round(cgst, 2),
+            "sgst": round(sgst, 2),
+            "grand_total": round(grand, 2),
+            "purchase_rate": round(prate, 2),
+            "purchase_cost": round(pcost, 2),
+            "profit": round(profit, 2)
+        })
+
     db.close()
     
     return {
@@ -1767,7 +1812,8 @@ def sales_summary(
         "gst": round(total_gst, 2),
         "grand_total": round(grand_total, 2),
         "cost": round(total_cost, 2),
-        "profit": round(total_profit, 2)
+        "profit": round(total_profit, 2),
+        "items": items_list
     }
 
 
