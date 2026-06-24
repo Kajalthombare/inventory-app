@@ -742,11 +742,12 @@
                                 <th>Total (₹)</th>
                                 <th>Cost (₹)</th>
                                 <th>Profit (₹)</th>
+                                <th>Actions</th>
                             </tr>
                         </thead>
                         <tbody id="sales_items_body">
                             <tr>
-                                <td colspan="13" style="text-align:center;color:var(--text-muted);">No sales loaded. Select filters and click Check Sales.</td>
+                                <td colspan="14" style="text-align:center;color:var(--text-muted);">No sales loaded. Select filters and click Check Sales.</td>
                             </tr>
                         </tbody>
                     </table>
@@ -877,8 +878,16 @@
                     <span class="grand-total-value">₹ <span id="q_grand_total">0.00</span></span>
                 </div>
                 <!-- Saved quotations list -->
-                <div id="quotation-list-wrap" style="margin-top:20px;">
-                    <div style="font-size:13px;font-weight:600;margin-bottom:8px;color:var(--text-muted);">Recent Proforma Invoices</div>
+                <div id="quotation-list-wrap" style="margin-top:30px; border-top: 1px solid var(--border); padding-top: 20px;">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; flex-wrap:wrap; gap:10px;">
+                        <div style="font-size:14px; font-weight:700; color:var(--text);">📋 Saved Proforma Invoices</div>
+                        <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+                            <input type="date" id="q_filter_start" class="form-input" style="width:130px; padding:3px 8px; font-size:12px;">
+                            <input type="date" id="q_filter_end" class="form-input" style="width:130px; padding:3px 8px; font-size:12px;">
+                            <input type="text" id="q_filter_customer" class="form-input" placeholder="Customer (optional)" style="width:150px; padding:3px 8px; font-size:12px;">
+                            <button onclick="exportAllQuotationsExcel()" class="btn btn-warning btn-sm" style="padding:4px 12px; font-size:12px;">⬇ Export Excel</button>
+                        </div>
+                    </div>
                     <div id="quotation-list"></div>
                 </div>
             </div>
@@ -1349,7 +1358,7 @@ async function getSales(){
     const tbody = document.getElementById('sales_items_body');
     if (tbody) {
         if (!data.items || data.items.length === 0) {
-            tbody.innerHTML = `<tr><td colspan="13" style="text-align:center;color:var(--text-muted);">No sales data matching the filters.</td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="14" style="text-align:center;color:var(--text-muted);">No sales data matching the filters.</td></tr>`;
         } else {
             tbody.innerHTML = data.items.map(item => {
                 const profitColor = item.profit >= 0 ? 'var(--success)' : 'var(--danger)';
@@ -1367,6 +1376,10 @@ async function getSales(){
                     <td style="font-weight:700;">₹ ${item.grand_total.toFixed(2)}</td>
                     <td>₹ ${item.purchase_rate.toFixed(2)}</td>
                     <td style="font-weight:700; color:${profitColor};">₹ ${item.profit.toFixed(2)}</td>
+                    <td style="text-align:center; min-width:140px;">
+                        <a href="/view_invoice_saved/${item.invoice_id}" target="_blank" class="btn btn-ghost btn-sm" style="padding:2px 8px;font-size:11px;color:var(--primary);text-decoration:none;">👁️ View</a>
+                        <a href="/export_invoice_excel/${item.invoice_id}" class="btn btn-ghost btn-sm" style="padding:2px 8px;font-size:11px;color:var(--success);text-decoration:none;">⬇ Excel</a>
+                    </td>
                 </tr>`;
             }).join('');
         }
@@ -1384,6 +1397,14 @@ window.onload = () => {
         document.getElementById('p_start_date').value = today;
         document.getElementById('p_end_date').value = today;
         getPurchases();
+    }
+
+    // Proforma Invoice initial dates
+    if (document.getElementById('q_filter_start')) {
+        const now = new Date();
+        const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
+        document.getElementById('q_filter_start').value = startOfMonth;
+        document.getElementById('q_filter_end').value = today;
     }
 };
 
@@ -1699,9 +1720,26 @@ async function loadQuotationList(){
     const data = await res.json();
     if (!data.length){ document.getElementById('quotation-list').innerHTML='<div style="color:var(--text-muted);font-size:13px;">No proforma invoices yet</div>'; return; }
     document.getElementById('quotation-list').innerHTML = `<table class="data-table" style="font-size:12px;">
-        <thead><tr><th>Proforma Invoice No</th><th>Customer</th><th>Date</th><th>Grand Total (₹)</th></tr></thead>
-        <tbody>${data.map(q=>`<tr><td style="font-weight:600;">${q.quotation_no}</td><td>${q.customer_name||'—'}</td><td>${q.date}</td><td>₹ ${q.grand_total.toLocaleString('en-IN',{minimumFractionDigits:2})}</td></tr>`).join('')}</tbody>
+        <thead><tr><th>Proforma Invoice No</th><th>Customer</th><th>Date</th><th>Grand Total (₹)</th><th style="width:160px;text-align:center;">Actions</th></tr></thead>
+        <tbody>${data.map(q=>`<tr>
+            <td style="font-weight:600;">${q.quotation_no}</td>
+            <td>${q.customer_name||'—'}</td>
+            <td>${q.date}</td>
+            <td>₹ ${q.grand_total.toLocaleString('en-IN',{minimumFractionDigits:2})}</td>
+            <td style="text-align:center;">
+                <a href="/view_quotation_saved/${q.id}" target="_blank" class="btn btn-ghost btn-sm" style="padding:2px 8px;font-size:11px;color:var(--primary);text-decoration:none;">👁️ View</a>
+                <a href="/export_quotation_excel/${q.id}" class="btn btn-ghost btn-sm" style="padding:2px 8px;font-size:11px;color:var(--success);text-decoration:none;">⬇ Excel</a>
+            </td>
+        </tr>`).join('')}</tbody>
     </table>`;
+}
+
+function exportAllQuotationsExcel(){
+    const s = document.getElementById('q_filter_start').value;
+    const e = document.getElementById('q_filter_end').value;
+    if (!s || !e) { alert('Select start and end dates first'); return; }
+    const customer = document.getElementById('q_filter_customer').value.trim();
+    window.open(`/export_all_quotations_excel?start_date=${s}&end_date=${e}&customer=${encodeURIComponent(customer)}`);
 }
 
 addQRow();

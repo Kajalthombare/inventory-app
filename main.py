@@ -1246,6 +1246,7 @@ async def download_quotation_pdf(request: Request):
     customer_email = data.get("customer_email", "")
 
     items, subtotal = [], 0
+    savings = 0.0
     for r in rows:
         sub = r["rate"] * r["qty"]
         disc = sub * (r.get("discount", 0) / 100)
@@ -1260,192 +1261,550 @@ async def download_quotation_pdf(request: Request):
             "taxable": round(after, 2)
         })
         subtotal += after
+        savings += disc
 
     cgst = round(subtotal * 0.09, 2)
     sgst = round(subtotal * 0.09, 2)
     total = round(subtotal + cgst + sgst, 2)
     date_str = datetime.now().strftime("%d-%b-%Y")
 
-    # Render as Proforma Invoice styled like the Tax Invoice
-    html = f"""<!DOCTYPE html>
-<html>
-<head>
-<meta charset='utf-8'>
-<title>Proforma Invoice</title>
-<style>
-body {{
-    font-family: Arial, sans-serif;
-    font-size: 13px;
-    color: #333;
-    margin: 30px;
-}}
-.header {{
-    display: flex;
-    justify-content: space-between;
-    border-bottom: 2px solid #000;
-    padding-bottom: 10px;
-}}
-.company h2 {{
-    margin: 0;
-    letter-spacing: 1px;
-}}
-.company p {{
-    margin: 4px 0;
-    font-size: 13px;
-    color: #444;
-}}
-.meta {{
-    text-align: right;
-}}
-.meta h1 {{
-    margin: 0;
-    font-size: 22px;
-    letter-spacing: 2px;
-}}
-.meta p {{
-    margin-top: 10px;
-    font-size: 13px;
-}}
-.buyer {{
-    margin-top: 20px;
-    padding: 10px;
-    background: #f5f5f5;
-    border-radius: 5px;
-}}
-table {{
-    width: 100%;
-    border-collapse: collapse;
-    margin-top: 20px;
-    font-size: 14px;
-}}
-th {{
-    background: #222;
-    color: #fff;
-    padding: 10px;
-    text-align: center;
-}}
-td {{
-    padding: 10px;
-    border-bottom: 1px solid #ddd;
-}}
-tr:nth-child(even) {{
-    background: #fafafa;
-}}
-.text-left {{ text-align: left; }}
-.text-right {{ text-align: right; }}
-.text-center {{ text-align: center; }}
-.total-box {{
-    width: 300px;
-    margin-left: auto;
-    margin-top: 20px;
-}}
-.total-box table td {{
-    border: none;
-    padding: 6px;
-}}
-.total-bold {{
-    font-weight: bold;
-    font-size: 15px;
-}}
-.signature {{
-    margin-top: 50px;
-    text-align: right;
-}}
-@media print {{
-    button {{ display: none; }}
-}}
-</style>
-</head>
-<body>
+    env = Environment(loader=FileSystemLoader("templates"))
+    template = env.get_template("quotation_pdf.html")
 
-<!-- HEADER -->
-<div class="header">
-    <div class="company">
-        <h2>MAHINDRA PRO SPARES</h2>
-        <p>
-            SHOP NO.01, CIDCO BUILDING,<br>
-            NEAR DEVANSHI HOTEL,<br>
-            TRUCK TERMINAL, KALAMBOLI,<br>
-            PANVEL, RAIGAD, MAHARASHTRA 410218
-        </p>
-        <p>
-            GSTIN: 27BHIPM7720B1ZH<br>
-            Contact: +91-8652369863<br>
-            Email: gksarvindkumar8652@gmail.com
-        </p>
-    </div>
-    <div class="meta">
-        <h1>PROFORMA INVOICE</h1>
-        <p>
-            <strong>Date:</strong> {date_str}
-        </p>
-    </div>
-</div>
-
-<!-- BUYER -->
-<div class="buyer">
-    <strong>To (Bill To):</strong><br>
-    <b>{customer_name or '—'}</b>
-    {f"<br>{customer_address}" if customer_address else ""}
-    {f"<br>GSTIN: {customer_gstin}" if customer_gstin else ""}
-    {f"<br>Mobile: {customer_mobile}" if customer_mobile else ""}
-    {f"<br>Email: {customer_email}" if customer_email else ""}
-</div>
-
-<!-- TABLE -->
-<table>
-    <thead>
-        <tr>
-            <th>Sl</th>
-            <th>Description</th>
-            <th>HSN</th>
-            <th>Qty</th>
-            <th>Rate</th>
-            <th>Disc%</th>
-            <th>Amount</th>
-        </tr>
-    </thead>
-    <tbody>
-        {"".join(f"<tr><td class='text-center'>{i+1}</td><td class='text-left'><b>{it['part_no']}</b><br><span style='font-size:12px; color:#555;'>{it['description']}</span></td><td class='text-center'>{it['hsn']}</td><td class='text-center'>{int(it['qty'])}</td><td class='text-right'>₹ {it['rate']:.2f}</td><td class='text-right'>{it['discount']}%</td><td class='text-right'>₹ {it['taxable']:.2f}</td></tr>" for i, it in enumerate(items))}
-    </tbody>
-</table>
-
-<!-- TOTAL -->
-<div class="total-box">
-    <table>
-        <tr>
-            <td>Subtotal</td>
-            <td class="text-right">₹ {subtotal:.2f}</td>
-        </tr>
-        <tr>
-            <td>CGST (9%)</td>
-            <td class="text-right">₹ {cgst:.2f}</td>
-        </tr>
-        <tr>
-            <td>SGST (9%)</td>
-            <td class="text-right">₹ {sgst:.2f}</td>
-        </tr>
-        <tr style="border-top:2px solid black;">
-            <td class="total-bold">Grand Total</td>
-            <td class="text-right total-bold">₹ {total:.2f}</td>
-        </tr>
-    </table>
-</div>
-
-<!-- SIGNATURE -->
-<div class="signature">
-    <p>Authorized Signatory</p>
-    <br><br>
-    _______________________
-</div>
-
-<div style="margin-top:20px; text-align:center;">
-    <button onclick="window.print()" style="background:#1e40af;color:#fff;border:none;padding:10px 28px;border-radius:6px;font-size:14px;cursor:pointer;">🖨️ Print / Save as PDF</button>
-</div>
-
-</body>
-</html>"""
+    html = template.render(
+        title="PROFORMA INVOICE",
+        label="Proforma Invoice No:",
+        invoice_no="Draft",
+        items=items,
+        subtotal=round(subtotal, 2),
+        cgst=cgst,
+        sgst=sgst,
+        total=total,
+        savings=round(savings, 2),
+        date=date_str,
+        buyer_name=customer_name,
+        buyer_address=customer_address,
+        buyer_gstin=customer_gstin,
+        buyer_mobile=customer_mobile,
+        buyer_email=customer_email
+    )
     return HTMLResponse(content=html)
+
+
+# Helper function to generate beautifully formatted single document Excel
+def generate_single_doc_excel(
+    title, doc_no_label, doc_no, date_val,
+    buyer_name, buyer_address, buyer_gstin, buyer_mobile, buyer_email,
+    items, is_quotation
+):
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, Alignment, Border, Side, PatternFill
+    from openpyxl.utils import get_column_letter
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = title[:30]
+    ws.views.sheetView[0].showGridLines = True
+
+    # Colors and Fonts
+    font_family = "Segoe UI"
+    color_primary = "1E40AF"  # Mahindra blue
+    color_text = "1F2937"
+    color_success = "15803D"
+
+    font_title = Font(name=font_family, size=16, bold=True, color="FFFFFF")
+    font_header = Font(name=font_family, size=11, bold=True, color="FFFFFF")
+    font_bold = Font(name=font_family, size=10, bold=True, color=color_text)
+    font_regular = Font(name=font_family, size=10, color=color_text)
+    font_savings = Font(name=font_family, size=11, bold=True, color=color_success)
+
+    fill_title = PatternFill(start_color=color_primary, end_color=color_primary, fill_type="solid")
+    fill_header = PatternFill(start_color="374151", end_color="374151", fill_type="solid")
+    fill_light = PatternFill(start_color="F9FAFB", end_color="F9FAFB", fill_type="solid")
+    fill_savings = PatternFill(start_color="F0FDF4", end_color="F0FDF4", fill_type="solid")
+
+    thin_border_side = Side(border_style="thin", color="D1D5DB")
+    border_thin = Border(left=thin_border_side, right=thin_border_side, top=thin_border_side, bottom=thin_border_side)
+    border_double_bottom = Border(bottom=Side(style="double", color="374151"), top=thin_border_side)
+
+    # Title Block
+    ws.merge_cells("A1:G2")
+    title_cell = ws["A1"]
+    title_cell.value = f"MAHINDRA PRO SPARES - {title}"
+    title_cell.font = font_title
+    title_cell.fill = fill_title
+    title_cell.alignment = Alignment(horizontal="center", vertical="center")
+
+    # Company Details & Meta Details
+    ws["A4"] = "MAHINDRA PRO SPARES"
+    ws["A4"].font = font_bold
+    ws["A5"] = "SHOP NO.01, CIDCO BUILDING, NEAR DEVANSHI HOTEL,"
+    ws["A5"].font = font_regular
+    ws["A6"] = "TRUCK TERMINAL, KALAMBOLI, PANVEL, RAIGAD, MH 410218"
+    ws["A6"].font = font_regular
+    ws["A7"] = "GSTIN: 27BHIPM7720B1ZH | Contact: +91-8652369863"
+    ws["A7"].font = font_regular
+
+    ws["F4"] = f"{doc_no_label}:"
+    ws["F4"].font = font_bold
+    ws["G4"] = doc_no
+    ws["G4"].font = font_bold
+    ws["F5"] = "Date:"
+    ws["F5"].font = font_bold
+    ws["G5"] = date_val.strftime("%d-%b-%Y") if date_val else ""
+    ws["G5"].font = font_regular
+
+    # Customer Details Block
+    ws["A9"] = "Bill To:"
+    ws["A9"].font = font_bold
+    ws["A10"] = buyer_name or "Walk-In Customer"
+    ws["A10"].font = font_bold
+    ws["A11"] = buyer_address or "—"
+    ws["A11"].font = font_regular
+    ws["A12"] = f"GSTIN: {buyer_gstin}" if buyer_gstin else ""
+    ws["A12"].font = font_regular
+    ws["A13"] = f"Mobile: {buyer_mobile} | Email: {buyer_email}" if (buyer_mobile or buyer_email) else ""
+    ws["A13"].font = font_regular
+
+    # Items Headers
+    headers = ["Sl", "Part No / Description", "HSN", "Qty", "Rate (₹)", "Disc %", "Amount (₹)"]
+    for col_idx, h in enumerate(headers, 1):
+        cell = ws.cell(row=15, column=col_idx)
+        cell.value = h
+        cell.font = font_header
+        cell.fill = fill_header
+        cell.alignment = Alignment(horizontal="center" if col_idx not in [2] else "left", vertical="center")
+    ws.row_dimensions[15].height = 25
+
+    # Item rows
+    row_idx = 16
+    subtotal = 0.0
+    savings = 0.0
+    for idx, item in enumerate(items, 1):
+        ws.cell(row=row_idx, column=1, value=idx).alignment = Alignment(horizontal="center")
+        
+        part_desc = f"{item.part_no}\n{item.description}" if item.description else item.part_no
+        cell_desc = ws.cell(row=row_idx, column=2, value=part_desc)
+        cell_desc.alignment = Alignment(wrap_text=True, vertical="center")
+        
+        ws.cell(row=row_idx, column=3, value=item.hsn or "—").alignment = Alignment(horizontal="center")
+        ws.cell(row=row_idx, column=4, value=int(item.qty)).alignment = Alignment(horizontal="center")
+        ws.cell(row=row_idx, column=5, value=float(item.rate)).number_format = "₹#,##0.00"
+        
+        disc = getattr(item, 'discount', 0.0) or 0.0
+        ws.cell(row=row_idx, column=6, value=disc).alignment = Alignment(horizontal="center")
+        
+        amt = float(item.amount) if hasattr(item, 'amount') else (float(item.rate) * float(item.qty) * (1 - disc / 100))
+        ws.cell(row=row_idx, column=7, value=amt).number_format = "₹#,##0.00"
+        
+        subtotal += amt
+        savings += (float(item.rate) * float(item.qty) * (disc / 100))
+
+        for c in range(1, 8):
+            cell = ws.cell(row=row_idx, column=c)
+            cell.font = font_regular
+            cell.border = border_thin
+            if idx % 2 == 0:
+                cell.fill = fill_light
+
+        # Adjust height based on newline
+        lines = part_desc.count('\n') + 1
+        ws.row_dimensions[row_idx].height = 18 * lines
+        row_idx += 1
+
+    # Financial Summary
+    cgst = round(subtotal * 0.09, 2)
+    sgst = round(subtotal * 0.09, 2)
+    grand_total = round(subtotal + cgst + sgst, 2)
+
+    summary_rows = [
+        ("Subtotal", subtotal),
+        ("CGST (9%)", cgst),
+        ("SGST (9%)", sgst),
+        ("Grand Total", grand_total),
+    ]
+
+    for label, val in summary_rows:
+        ws.cell(row=row_idx, column=6, value=label).font = font_bold if label == "Grand Total" else font_regular
+        ws.cell(row=row_idx, column=6).alignment = Alignment(horizontal="right")
+        
+        val_cell = ws.cell(row=row_idx, column=7, value=val)
+        val_cell.font = font_bold if label == "Grand Total" else font_regular
+        val_cell.number_format = "₹#,##0.00"
+        
+        if label == "Grand Total":
+            val_cell.border = border_double_bottom
+            ws.cell(row=row_idx, column=6).border = Border(top=thin_border_side)
+        row_idx += 1
+
+    # Savings Star
+    if savings > 0.01:
+        row_idx += 1
+        ws.merge_cells(start_row=row_idx, start_column=1, end_row=row_idx+1, end_column=7)
+        savings_cell = ws.cell(row=row_idx, column=1)
+        savings_cell.value = f"★ You have saved {format_inr(savings)} from this order!"
+        savings_cell.font = font_savings
+        savings_cell.fill = fill_savings
+        savings_cell.alignment = Alignment(horizontal="center", vertical="center")
+        
+        thin_green_side = Side(border_style="dashDot", color="16A34A")
+        green_border = Border(left=thin_green_side, right=thin_green_side, top=thin_green_side, bottom=thin_green_side)
+        for r in range(row_idx, row_idx+2):
+            for c in range(1, 8):
+                ws.cell(row=r, column=c).border = green_border
+        row_idx += 2
+
+    # Terms & Conditions
+    row_idx += 1
+    ws.cell(row=row_idx, column=1, value="Terms & Conditions:").font = font_bold
+    row_idx += 1
+    terms = [
+        "1. Interest @ 18% p.a. will be charged if payment is not made within 15 days of invoice date.",
+        "2. Goods once sold will not be taken back or exchanged.",
+        "3. Our responsibility ceases as soon as the goods leave our premises.",
+        "4. All disputes are subject to Raigad jurisdiction only."
+    ]
+    for t in terms:
+        ws.cell(row=row_idx, column=1, value=t).font = font_regular
+        row_idx += 1
+
+    # Set column widths
+    column_widths = [6, 32, 10, 8, 14, 14, 16]
+    for i, w in enumerate(column_widths, 1):
+        ws.column_dimensions[get_column_letter(i)].width = w
+
+    output = io.BytesIO()
+    wb.save(output)
+    output.seek(0)
+
+    filename = f"{title.lower().replace(' ', '_')}_{doc_no}.xlsx"
+    return StreamingResponse(
+        output,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename={filename}"}
+    )
+
+
+@app.get("/view_quotation_saved/{q_id}", response_class=HTMLResponse)
+def view_quotation_saved(q_id: int):
+    db = SessionLocal()
+    quotation = db.execute(text("""
+        SELECT id, quotation_no, customer_name, customer_address, customer_gstin, customer_mobile, customer_email, date
+        FROM quotations WHERE id = :id
+    """), {"id": q_id}).fetchone()
+    
+    if not quotation:
+        db.close()
+        return HTMLResponse("<h1>Proforma Invoice not found</h1>", status_code=404)
+        
+    items_rows = db.execute(text("""
+        SELECT part_no, description, rate, qty, discount, amount, hsn
+        FROM quotation_items WHERE quotation_id = :qid
+    """), {"qid": q_id}).fetchall()
+    db.close()
+
+    items = []
+    subtotal = 0
+    savings = 0.0
+    for r in items_rows:
+        sub = r.rate * r.qty
+        disc = sub * ((r.discount or 0) / 100)
+        taxable = sub - disc
+        items.append({
+            "part_no": r.part_no,
+            "description": r.description,
+            "hsn": r.hsn,
+            "rate": r.rate,
+            "qty": r.qty,
+            "discount": r.discount or 0,
+            "taxable": round(taxable, 2)
+        })
+        subtotal += taxable
+        savings += disc
+
+    cgst = round(subtotal * 0.09, 2)
+    sgst = round(subtotal * 0.09, 2)
+    total = round(subtotal + cgst + sgst, 2)
+    
+    env = Environment(loader=FileSystemLoader("templates"))
+    template = env.get_template("quotation_pdf.html")
+
+    html = template.render(
+        title="PROFORMA INVOICE",
+        label="Proforma Invoice No:",
+        invoice_no=quotation.quotation_no,
+        items=items,
+        subtotal=round(subtotal, 2),
+        cgst=cgst,
+        sgst=sgst,
+        total=total,
+        savings=round(savings, 2),
+        date=quotation.date.strftime("%d-%b-%Y") if quotation.date else "",
+        buyer_name=quotation.customer_name,
+        buyer_address=quotation.customer_address,
+        buyer_gstin=quotation.customer_gstin,
+        buyer_mobile=quotation.customer_mobile,
+        buyer_email=quotation.customer_email
+    )
+    return HTMLResponse(content=html)
+
+
+@app.get("/view_invoice_saved/{i_id}", response_class=HTMLResponse)
+def view_invoice_saved(i_id: int):
+    db = SessionLocal()
+    invoice = db.execute(text("""
+        SELECT id, invoice_no, customer_name, customer_address, customer_gstin, customer_mobile, customer_email, date
+        FROM invoices WHERE id = :id
+    """), {"id": i_id}).fetchone()
+    
+    if not invoice:
+        db.close()
+        return HTMLResponse("<h1>Tax Invoice not found</h1>", status_code=404)
+        
+    items_rows = db.execute(text("""
+        SELECT part_no, description, rate, quantity, amount, hsn
+        FROM invoice_items WHERE invoice_id = :iid
+    """), {"iid": i_id}).fetchall()
+    db.close()
+
+    items = []
+    subtotal = 0
+    savings = 0.0
+    for r in items_rows:
+        sub = r.rate * r.quantity
+        taxable = r.amount
+        disc_amt = max(0.0, sub - taxable)
+        disc_pct = round((disc_amt / sub) * 100, 2) if sub > 0 else 0.0
+        items.append({
+            "part_no": r.part_no,
+            "description": r.description,
+            "hsn": r.hsn,
+            "rate": r.rate,
+            "qty": r.quantity,
+            "discount": disc_pct,
+            "taxable": round(taxable, 2)
+        })
+        subtotal += taxable
+        savings += disc_amt
+
+    cgst = round(subtotal * 0.09, 2)
+    sgst = round(subtotal * 0.09, 2)
+    total = round(subtotal + cgst + sgst, 2)
+    
+    env = Environment(loader=FileSystemLoader("templates"))
+    template = env.get_template("quotation_pdf.html")
+
+    html = template.render(
+        title="TAX INVOICE",
+        label="Invoice No:",
+        invoice_no=invoice.invoice_no,
+        items=items,
+        subtotal=round(subtotal, 2),
+        cgst=cgst,
+        sgst=sgst,
+        total=total,
+        savings=round(savings, 2),
+        date=invoice.date.strftime("%d-%b-%Y") if invoice.date else "",
+        buyer_name=invoice.customer_name,
+        buyer_address=invoice.customer_address,
+        buyer_gstin=invoice.customer_gstin,
+        buyer_mobile=invoice.customer_mobile,
+        buyer_email=invoice.customer_email
+    )
+    return HTMLResponse(content=html)
+
+
+@app.get("/export_quotation_excel/{q_id}")
+def export_quotation_excel(q_id: int):
+    db = SessionLocal()
+    quotation = db.execute(text("""
+        SELECT id, quotation_no, customer_name, customer_address, customer_gstin, customer_mobile, customer_email, date
+        FROM quotations WHERE id = :id
+    """), {"id": q_id}).fetchone()
+    
+    if not quotation:
+        db.close()
+        return HTMLResponse("<h1>Proforma Invoice not found</h1>", status_code=404)
+        
+    items_rows = db.execute(text("""
+        SELECT part_no, description, rate, qty, discount, amount, hsn
+        FROM quotation_items WHERE quotation_id = :qid
+    """), {"qid": q_id}).fetchall()
+    db.close()
+
+    return generate_single_doc_excel(
+        title="PROFORMA INVOICE",
+        doc_no_label="Proforma Invoice No",
+        doc_no=quotation.quotation_no,
+        date_val=quotation.date,
+        buyer_name=quotation.customer_name,
+        buyer_address=quotation.customer_address,
+        buyer_gstin=quotation.customer_gstin,
+        buyer_mobile=quotation.customer_mobile,
+        buyer_email=quotation.customer_email,
+        items=items_rows,
+        is_quotation=True
+    )
+
+
+@app.get("/export_invoice_excel/{i_id}")
+def export_invoice_excel(i_id: int):
+    db = SessionLocal()
+    invoice = db.execute(text("""
+        SELECT id, invoice_no, customer_name, customer_address, customer_gstin, customer_mobile, customer_email, date
+        FROM invoices WHERE id = :id
+    """), {"id": i_id}).fetchone()
+    
+    if not invoice:
+        db.close()
+        return HTMLResponse("<h1>Invoice not found</h1>", status_code=404)
+        
+    items_rows = db.execute(text("""
+        SELECT part_no, description, rate, quantity as qty, amount, hsn
+        FROM invoice_items WHERE invoice_id = :iid
+    """), {"iid": i_id}).fetchall()
+    db.close()
+
+    # Adapt format
+    adapted_items = []
+    for r in items_rows:
+        sub = r.rate * r.qty
+        disc_amt = max(0.0, sub - r.amount)
+        disc_pct = (disc_amt / sub) * 100 if sub > 0 else 0.0
+        adapted_items.append(type('Item', (object,), {
+            "part_no": r.part_no,
+            "description": r.description,
+            "hsn": r.hsn,
+            "rate": r.rate,
+            "qty": r.qty,
+            "discount": disc_pct,
+            "amount": r.amount
+        }))
+
+    return generate_single_doc_excel(
+        title="TAX INVOICE",
+        doc_no_label="Invoice No",
+        doc_no=invoice.invoice_no,
+        date_val=invoice.date,
+        buyer_name=invoice.customer_name,
+        buyer_address=invoice.customer_address,
+        buyer_gstin=invoice.customer_gstin,
+        buyer_mobile=invoice.customer_mobile,
+        buyer_email=invoice.customer_email,
+        items=adapted_items,
+        is_quotation=False
+    )
+
+
+@app.get("/export_all_quotations_excel")
+def export_all_quotations_excel(
+    start_date: str,
+    end_date: str,
+    customer: str = Query("")
+):
+    db = SessionLocal()
+    sql_parts = [
+        "FROM quotation_items qi",
+        "JOIN quotations q ON qi.quotation_id = q.id",
+        "WHERE DATE(q.date) BETWEEN :start AND :end"
+    ]
+    params = {
+        "start": start_date,
+        "end": end_date
+    }
+    if customer:
+        sql_parts.append("AND LOWER(q.customer_name) LIKE LOWER(:customer)")
+        params["customer"] = f"%{customer}%"
+
+    query = text(f"""
+        SELECT 
+            q.quotation_no,
+            q.customer_name,
+            qi.part_no,
+            qi.description,
+            qi.qty,
+            qi.rate,
+            qi.discount,
+            qi.amount as taxable_amount,
+            q.date
+        {chr(10).join(sql_parts)}
+        ORDER BY q.date DESC
+    """)
+
+    result = db.execute(query, params).fetchall()
+    db.close()
+
+    rows = []
+    for r in result:
+        taxable = float(r.taxable_amount or 0.0)
+        gst = taxable * 0.18
+        cgst = gst / 2
+        sgst = gst / 2
+        grand = taxable + gst
+        qty = float(r.qty or 0.0)
+        rate = float(r.rate or 0.0)
+        disc = float(r.discount or 0.0)
+        saved = (qty * rate) - taxable
+
+        rows.append({
+            "Proforma Invoice No": r.quotation_no,
+            "Customer": r.customer_name,
+            "Part No": r.part_no,
+            "Description": r.description,
+            "Qty": qty,
+            "Selling Rate": rate,
+            "Discount %": disc,
+            "Taxable Amount": round(taxable, 2),
+            "CGST": round(cgst, 2),
+            "SGST": round(sgst, 2),
+            "Grand Total": round(grand, 2),
+            "Saved Amount": round(saved, 2),
+            "Date": r.date.strftime("%Y-%m-%d %H:%M:%S") if r.date else ""
+        })
+
+    df = pd.DataFrame(rows) if rows else pd.DataFrame(columns=[
+        "Proforma Invoice No", "Customer", "Part No", "Description", "Qty", "Selling Rate", "Discount %",
+        "Taxable Amount", "CGST", "SGST", "Grand Total", "Saved Amount", "Date"
+    ])
+
+    total_orders = len(df["Proforma Invoice No"].unique()) if not df.empty else 0
+    total_sales = df["Taxable Amount"].sum() if not df.empty else 0.0
+    total_cgst = df["CGST"].sum() if not df.empty else 0.0
+    total_sgst = df["SGST"].sum() if not df.empty else 0.0
+    grand_total = df["Grand Total"].sum() if not df.empty else 0.0
+    total_saved = df["Saved Amount"].sum() if not df.empty else 0.0
+
+    summary_df = pd.DataFrame({
+        "Metric": [
+            "Total Proforma Orders",
+            "Total Sales (Taxable)",
+            "Total CGST",
+            "Total SGST",
+            "Grand Total (incl. GST)",
+            "Total Saved (due to Discounts)"
+        ],
+        "Value": [
+            total_orders,
+            round(total_sales, 2),
+            round(total_cgst, 2),
+            round(total_sgst, 2),
+            round(grand_total, 2),
+            round(total_saved, 2)
+        ]
+    })
+
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        df.to_excel(writer, sheet_name="Proforma Data", index=False)
+        summary_df.to_excel(writer, sheet_name="Summary", index=False)
+
+    output.seek(0)
+
+    return StreamingResponse(
+        output,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": "attachment; filename=proforma_sales.xlsx"}
+    )
 
 # ----------------------------------------------------------------
 
@@ -1679,13 +2038,18 @@ async def download_pdf(request: Request):
     env = Environment(loader=FileSystemLoader("templates"))
     template = env.get_template("quotation_pdf.html")
 
+    savings = sum((it["rate"] * it["qty"]) - it["taxable"] for it in items)
+
     html = template.render(
+        title="TAX INVOICE",
+        label="Invoice No:",
         invoice_no=invoice_no,
         items=items,
         subtotal=round(subtotal, 2),
         cgst=cgst,
         sgst=sgst,
         total=total,
+        savings=round(savings, 2),
         date=datetime.now().strftime("%d-%b-%Y"),
         buyer_name=customer_name,
         buyer_address=customer_address,
@@ -1694,21 +2058,7 @@ async def download_pdf(request: Request):
         buyer_email=customer_email
     )
 
-    # config = pdfkit.configuration(
-    #     wkhtmltopdf="/usr/local/bin/wkhtmltopdf"
-    # )
-
-    # options = {
-    #     "enable-local-file-access": ""
-    # }
-
-    # pdf_file = "quotation.pdf"
-
-    # pdfkit.from_string(html, pdf_file, configuration=config, options=options)
-
-    # return FileResponse(pdf_file, media_type="application/pdf", filename="quotation.pdf")
     from fastapi.responses import HTMLResponse
-
     return HTMLResponse(content=html)
 
 from fastapi import Query
@@ -1762,6 +2112,7 @@ def sales_summary(
     # Fetch detailed sales list
     items_query = text(f"""
         SELECT 
+            i.id as invoice_id,
             i.invoice_no,
             i.customer_name,
             ii.part_no,
@@ -1788,6 +2139,7 @@ def sales_summary(
         pcost = prate * qty
         profit = taxable - pcost
         items_list.append({
+            "invoice_id": r.invoice_id,
             "date": r.date.strftime("%Y-%m-%d %H:%M:%S") if r.date else "",
             "invoice_no": r.invoice_no,
             "customer_name": r.customer_name,

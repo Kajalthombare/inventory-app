@@ -134,9 +134,9 @@ tr:nth-child(even) {
     </div>
 
     <div class="meta">
-        <h1>TAX INVOICE</h1>
+        <h1>{{ title|default("TAX INVOICE") }}</h1>
         <p>
-            <strong>Invoice No:</strong> {{ invoice_no }}<br>
+            <strong>{{ label|default("Invoice No:") }}</strong> {{ invoice_no }}<br>
             <strong>Date:</strong> {{ date }}
         </p>
     </div>
@@ -215,11 +215,27 @@ tr:nth-child(even) {
 
 
 
-<!-- SIGNATURE -->
-<div class="signature">
-    <p>Authorized Signatory</p>
-    <br><br>
-    _______________________
+<!-- TERMS & CONDITIONS AND SIGNATURE -->
+<div style="margin-top: 30px; display: flex; justify-content: space-between; align-items: flex-start; page-break-inside: avoid;">
+    <div style="width: 60%; font-size: 11px; color: #555; text-align: left;">
+        {% if savings and savings > 0.01 %}
+        <div style="font-size: 13px; color: #15803d; font-weight: bold; margin-bottom: 12px; padding: 6px 10px; background: #f0fdf4; border-radius: 4px; border: 1px dashed #16a34a; display: inline-block;">
+            ★ You have saved ₹ {{ "%.2f"|format(savings) }} from this order!
+        </div>
+        {% endif %}
+        
+        <div style="font-weight: bold; margin-bottom: 4px; color: #222;">Terms & Conditions:</div>
+        <ol style="margin: 0; padding-left: 15px; line-height: 1.4;">
+            <li>Interest @ 18% p.a. will be charged if payment is not made within 15 days of invoice date.</li>
+            <li>Goods once sold will not be taken back or exchanged.</li>
+            <li>Our responsibility ceases as soon as the goods leave our premises.</li>
+            <li>All disputes are subject to Raigad jurisdiction only.</li>
+        </ol>
+    </div>
+    <div class="signature" style="margin-top: 20px; text-align: right; width: 35%;">
+        <p style="margin-bottom: 50px;">Authorized Signatory</p>
+        <p>_______________________</p>
+    </div>
 </div>
 
 <div style="margin-top:20px; text-align:center;">
