@@ -1454,20 +1454,6 @@ def generate_single_doc_excel(
                 ws.cell(row=r, column=c).border = green_border
         row_idx += 2
 
-    # Terms & Conditions
-    row_idx += 1
-    ws.cell(row=row_idx, column=1, value="Terms & Conditions:").font = font_bold
-    row_idx += 1
-    terms = [
-        "1. Interest @ 18% p.a. will be charged if payment is not made within 15 days of invoice date.",
-        "2. Goods once sold will not be taken back or exchanged.",
-        "3. Our responsibility ceases as soon as the goods leave our premises.",
-        "4. All disputes are subject to Raigad jurisdiction only."
-    ]
-    for t in terms:
-        ws.cell(row=row_idx, column=1, value=t).font = font_regular
-        row_idx += 1
-
     # Set column widths
     column_widths = [6, 32, 10, 8, 14, 14, 16]
     for i, w in enumerate(column_widths, 1):
