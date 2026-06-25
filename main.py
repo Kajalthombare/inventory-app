@@ -1792,6 +1792,169 @@ def export_all_quotations_excel(
         headers={"Content-Disposition": "attachment; filename=proforma_sales.xlsx"}
     )
 
+@app.get("/out_of_stock_products")
+def get_out_of_stock_products():
+    db = SessionLocal()
+    products = db.query(Product).filter(Product.quantity == 0).all()
+    db.close()
+    return [{
+        "part_no": p.part_no,
+        "description": p.description,
+        "hsn": p.hsn,
+        "gst": p.gst or 18.0
+    } for p in products]
+
+
+@app.post("/download_order_book_pdf")
+async def download_order_book_pdf(request: Request):
+    data = await request.json()
+    rows = data.get("rows", [])
+    
+    # Exclude rates and discounts as requested. Just show sl, part_no, description, hsn, gst, qty
+    items = []
+    for r in rows:
+        items.append({
+            "part_no": r.get("part_no", ""),
+            "description": r.get("description", ""),
+            "hsn": r.get("hsn", ""),
+            "gst": r.get("gst", 18.0),
+            "qty": r.get("qty", 1)
+        })
+
+    date_str = datetime.now().strftime("%d-%b-%Y")
+    
+    env = Environment(loader=FileSystemLoader("templates"))
+    template = env.get_template("order_book_pdf.html")
+
+    html = template.render(
+        items=items,
+        date=date_str
+    )
+    return HTMLResponse(content=html)
+
+
+@app.post("/download_order_book_excel")
+async def download_order_book_excel(request: Request):
+    data = await request.json()
+    rows = data.get("rows", [])
+    
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, Alignment, Border, Side, PatternFill
+    from openpyxl.utils import get_column_letter
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Order Book"
+    ws.views.sheetView[0].showGridLines = True
+
+    # Colors and Fonts
+    font_family = "Segoe UI"
+    color_primary = "1E40AF"  # Mahindra blue
+    color_text = "1F2937"
+
+    font_title = Font(name=font_family, size=16, bold=True, color="FFFFFF")
+    font_header = Font(name=font_family, size=11, bold=True, color="FFFFFF")
+    font_bold = Font(name=font_family, size=10, bold=True, color=color_text)
+    font_regular = Font(name=font_family, size=10, color=color_text)
+
+    fill_title = PatternFill(start_color=color_primary, end_color=color_primary, fill_type="solid")
+    fill_header = PatternFill(start_color="374151", end_color="374151", fill_type="solid")
+    fill_light = PatternFill(start_color="F9FAFB", end_color="F9FAFB", fill_type="solid")
+
+    thin_border_side = Side(border_style="thin", color="D1D5DB")
+    border_thin = Border(left=thin_border_side, right=thin_border_side, top=thin_border_side, bottom=thin_border_side)
+
+    # Title Block
+    ws.merge_cells("A1:E2")
+    title_cell = ws["A1"]
+    title_cell.value = "MAHINDRA PRO SPARES - ORDER BOOK"
+    title_cell.font = font_title
+    title_cell.fill = fill_title
+    title_cell.alignment = Alignment(horizontal="center", vertical="center")
+
+    # Company Details & Meta Details
+    ws["A4"] = "MAHINDRA PRO SPARES"
+    ws["A4"].font = font_bold
+    ws["A5"] = "SHOP NO.01, CIDCO BUILDING, NEAR DEVANSHI HOTEL,"
+    ws["A5"].font = font_regular
+    ws["A6"] = "TRUCK TERMINAL, KALAMBOLI, PANVEL, RAIGAD, MH 410218"
+    ws["A6"].font = font_regular
+
+    ws["D4"] = "Document Type:"
+    ws["D4"].font = font_bold
+    ws["E4"] = "Order Book / Purchase Order"
+    ws["E4"].font = font_regular
+    ws["D5"] = "Date:"
+    ws["D5"].font = font_bold
+    ws["E5"] = datetime.now().strftime("%d-%b-%Y")
+    ws["E5"].font = font_regular
+
+    # Items Headers
+    headers = ["Sl", "Part No / Description", "HSN", "GST %", "Order Qty"]
+    for col_idx, h in enumerate(headers, 1):
+        cell = ws.cell(row=8, column=col_idx)
+        cell.value = h
+        cell.font = font_header
+        cell.fill = fill_header
+        cell.alignment = Alignment(horizontal="center" if col_idx != 2 else "left", vertical="center")
+    ws.row_dimensions[8].height = 25
+
+    # Item rows
+    row_idx = 9
+    for idx, item in enumerate(rows, 1):
+        ws.cell(row=row_idx, column=1, value=idx).alignment = Alignment(horizontal="center")
+        
+        part_no = item.get("part_no", "")
+        desc = item.get("description", "")
+        part_desc = f"{part_no}\n{desc}" if desc else part_no
+        cell_desc = ws.cell(row=row_idx, column=2, value=part_desc)
+        cell_desc.alignment = Alignment(wrap_text=True, vertical="center")
+        
+        ws.cell(row=row_idx, column=3, value=item.get("hsn", "") or "—").alignment = Alignment(horizontal="center")
+        ws.cell(row=row_idx, column=4, value=f"{item.get('gst', 18.0)}%").alignment = Alignment(horizontal="center")
+        ws.cell(row=row_idx, column=5, value=int(item.get("qty", 1))).alignment = Alignment(horizontal="center")
+        
+        for c in range(1, 6):
+            cell = ws.cell(row=row_idx, column=c)
+            cell.font = font_regular
+            cell.border = border_thin
+            if idx % 2 == 0:
+                cell.fill = fill_light
+
+        # Adjust height based on newline
+        lines = part_desc.count('\n') + 1
+        ws.row_dimensions[row_idx].height = 18 * lines
+        row_idx += 1
+
+    # Footer / Notes
+    row_idx += 1
+    ws.cell(row=row_idx, column=1, value="Notes:").font = font_bold
+    row_idx += 1
+    ws.cell(row=row_idx, column=1, value="This is an order book summary generated for procuring out-of-stock inventory.").font = font_regular
+
+    # Prepared By
+    row_idx += 2
+    ws.cell(row=row_idx, column=4, value="Prepared By:").font = font_bold
+    ws.cell(row=row_idx, column=5, value="__________________").font = font_regular
+
+    # Set column widths
+    column_widths = [6, 45, 12, 10, 14]
+    for i, w in enumerate(column_widths, 1):
+        ws.column_dimensions[get_column_letter(i)].width = w
+
+    output = io.BytesIO()
+    wb.save(output)
+    wb.close()
+    output.seek(0)
+
+    filename = f"order_book_{datetime.now().strftime('%Y%m%d')}.xlsx"
+    return StreamingResponse(
+        output,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename={filename}"}
+    )
+
+
 # ----------------------------------------------------------------
 
 

@@ -598,6 +598,9 @@
         <a class="nav-item" href="#invoice-section">
             <span class="nav-icon">🧾</span> Raise Invoice
         </a>
+        <a class="nav-item" href="#order-book-section">
+            <span class="nav-icon">📖</span> Order Book
+        </a>
 
         <div class="nav-section-label" style="margin-top:8px;">Master</div>
         <a class="nav-item" href="#price-master-section">
@@ -946,6 +949,36 @@
                 <div class="grand-total-row">
                     <span class="grand-total-label">Grand Total (incl. 18% GST)</span>
                     <span class="grand-total-value">₹ <span id="inv_grand_total">0.00</span></span>
+                </div>
+            </div>
+        </div>
+
+        <!-- ══ ORDER BOOK (out of stock procurement list) ══ -->
+        <div class="section-card" id="order-book-section">
+            <div class="section-header">
+                <div class="section-title">📖 Order Book <span style="font-size:11px;font-weight:400;color:var(--text-muted);margin-left:8px;">— Procure out-of-stock items (no rate/discount)</span></div>
+                <div style="display:flex;gap:8px;">
+                    <button onclick="addObRow()" class="btn btn-ghost btn-sm">+ Add Row</button>
+                    <button onclick="refreshOrderBook()" class="btn btn-warning btn-sm">🔄 Refresh Out-of-Stock</button>
+                    <button onclick="downloadObPDF()" class="btn btn-primary btn-sm">📄 Download PDF</button>
+                    <button onclick="downloadObExcel()" class="btn btn-success btn-sm">⬇ Download Excel</button>
+                </div>
+            </div>
+            <div class="section-body">
+                <div class="table-wrap">
+                    <table class="data-table" id="ob_table">
+                        <thead>
+                            <tr>
+                                <th>Part No</th>
+                                <th>Description</th>
+                                <th style="width:140px;">HSN</th>
+                                <th style="width:100px;">GST %</th>
+                                <th style="width:110px;">Order Qty</th>
+                                <th style="width:60px;"></th>
+                            </tr>
+                        </thead>
+                        <tbody id="ob_body"></tbody>
+                    </table>
                 </div>
             </div>
         </div>
@@ -1924,6 +1957,118 @@ function reloadPage(){
     return true;
 }
 
+// ── Order Book (Procurement List) Logic ──
+let obRows = [];
+let obLoaded = false;
+
+async function initOrderBook() {
+    if (!obLoaded) {
+        await refreshOrderBook();
+        obLoaded = true;
+    }
+}
+
+async function refreshOrderBook() {
+    const res = await fetch('/out_of_stock_products');
+    const data = await res.json();
+    obRows = data.map(p => ({
+        part_no: p.part_no || '',
+        description: p.description || '',
+        hsn: p.hsn || '',
+        gst: p.gst || 18.0,
+        qty: 1
+    }));
+    renderObRows();
+}
+
+function renderObRows() {
+    let html = '';
+    obRows.forEach((r, i) => {
+        html += `<tr>
+            <td style="position:relative;">
+                <input id="ob-inp-${i}" value="${r.part_no}"
+                    oninput="acSearch(this,document.getElementById('ob-ac-${i}'),d=>{obRows[${i}].part_no=d.part_no;obRows[${i}].description=d.description;obRows[${i}].hsn=d.hsn;obRows[${i}].gst=d.gst||18.0;renderObRows();})"
+                    onblur="obRows[${i}].part_no=this.value.trim().toUpperCase();this.value=obRows[${i}].part_no;"
+                    class="q-table-input" placeholder="Part No or search…">
+                <div id="ob-ac-${i}" class="ac-list"></div>
+            </td>
+            <td>
+                <input type="text" value="${r.description}"
+                    onchange="obRows[${i}].description = this.value; renderObRows();"
+                    class="q-table-input" placeholder="Description">
+            </td>
+            <td>
+                <input type="text" value="${r.hsn}"
+                    onchange="obRows[${i}].hsn = this.value; renderObRows();"
+                    class="q-table-input" placeholder="HSN" style="width:100px;">
+            </td>
+            <td>
+                <input type="number" value="${r.gst}" min="0" max="100"
+                    onchange="obRows[${i}].gst = parseFloat(this.value)||0; renderObRows();"
+                    class="q-table-input" style="width:65px;">
+            </td>
+            <td>
+                <input type="number" value="${r.qty}" min="1"
+                    onchange="obRows[${i}].qty = parseInt(this.value)||1; renderObRows();"
+                    class="q-table-input" style="width:70px;">
+            </td>
+            <td style="text-align:center;">
+                <button onclick="obRows.splice(${i},1);renderObRows()" class="btn btn-ghost btn-sm">✕</button>
+            </td>
+        </tr>`;
+    });
+    document.getElementById('ob_body').innerHTML = html;
+}
+
+function addObRow() {
+    obRows.push({ part_no: '', description: '', hsn: '', gst: 18.0, qty: 1 });
+    renderObRows();
+}
+
+async function downloadObPDF() {
+    const filtered = obRows.filter(r => r.part_no.trim() && r.qty > 0);
+    if (!filtered.length) {
+        alert('Please add at least one item with a part number and quantity > 0');
+        return;
+    }
+    const res = await fetch('/download_order_book_pdf', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ rows: filtered })
+    });
+    const html = await res.text();
+    const w = window.open();
+    w.document.open();
+    w.document.write(html);
+    w.document.close();
+}
+
+async function downloadObExcel() {
+    const filtered = obRows.filter(r => r.part_no.trim() && r.qty > 0);
+    if (!filtered.length) {
+        alert('Please add at least one item with a part number and quantity > 0');
+        return;
+    }
+    const res = await fetch('/download_order_book_excel', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ rows: filtered })
+    });
+    if (!res.ok) {
+        alert('Error generating Excel file');
+        return;
+    }
+    const blob = await res.blob();
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `order_book_${new Date().toISOString().split('T')[0].replace(/-/g,'')}.xlsx`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    window.URL.revokeObjectURL(url);
+}
+
 // ── Tab Management ──
 function initTabs() {
     const tabs = [
@@ -1932,6 +2077,7 @@ function initTabs() {
         'purchase-section',
         'quotation-section',
         'invoice-section',
+        'order-book-section',
         'price-master-section',
         'upload-section'
     ];
@@ -1946,6 +2092,10 @@ function initTabs() {
         // Show selected tab
         const activeTab = document.getElementById(targetId);
         if (activeTab) activeTab.style.display = 'block';
+
+        if (targetId === 'order-book-section') {
+            initOrderBook();
+        }
 
         // Stats grid only visible on stock section
         const stats = document.querySelector('.stats-grid');
