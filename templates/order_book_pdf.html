@@ -101,7 +101,6 @@ tr:nth-child(even) {
             <th style="width: 50px;">Sl</th>
             <th>Part No / Description</th>
             <th style="width: 100px;">HSN</th>
-            <th style="width: 80px;">GST %</th>
             <th style="width: 100px;">Order Qty</th>
         </tr>
     </thead>
@@ -114,7 +113,6 @@ tr:nth-child(even) {
                 {% if item.description %}<br><span style="font-size: 12px; color: #555;">{{ item.description }}</span>{% endif %}
             </td>
             <td class="text-center">{{ item.hsn or '—' }}</td>
-            <td class="text-center">{{ item.gst }}%</td>
             <td class="text-center" style="font-weight: bold;">{{ item.qty | int }}</td>
         </tr>
         {% endfor %}

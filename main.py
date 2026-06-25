@@ -1865,7 +1865,7 @@ async def download_order_book_excel(request: Request):
     border_thin = Border(left=thin_border_side, right=thin_border_side, top=thin_border_side, bottom=thin_border_side)
 
     # Title Block
-    ws.merge_cells("A1:E2")
+    ws.merge_cells("A1:D2")
     title_cell = ws["A1"]
     title_cell.value = "MAHINDRA PRO SPARES - ORDER BOOK"
     title_cell.font = font_title
@@ -1880,17 +1880,17 @@ async def download_order_book_excel(request: Request):
     ws["A6"] = "TRUCK TERMINAL, KALAMBOLI, PANVEL, RAIGAD, MH 410218"
     ws["A6"].font = font_regular
 
-    ws["D4"] = "Document Type:"
-    ws["D4"].font = font_bold
-    ws["E4"] = "Order Book / Purchase Order"
-    ws["E4"].font = font_regular
-    ws["D5"] = "Date:"
-    ws["D5"].font = font_bold
-    ws["E5"] = datetime.now().strftime("%d-%b-%Y")
-    ws["E5"].font = font_regular
+    ws["C4"] = "Document Type:"
+    ws["C4"].font = font_bold
+    ws["D4"] = "Order Book / Purchase Order"
+    ws["D4"].font = font_regular
+    ws["C5"] = "Date:"
+    ws["C5"].font = font_bold
+    ws["D5"] = datetime.now().strftime("%d-%b-%Y")
+    ws["D5"].font = font_regular
 
     # Items Headers
-    headers = ["Sl", "Part No / Description", "HSN", "GST %", "Order Qty"]
+    headers = ["Sl", "Part No / Description", "HSN", "Order Qty"]
     for col_idx, h in enumerate(headers, 1):
         cell = ws.cell(row=8, column=col_idx)
         cell.value = h
@@ -1911,10 +1911,9 @@ async def download_order_book_excel(request: Request):
         cell_desc.alignment = Alignment(wrap_text=True, vertical="center")
         
         ws.cell(row=row_idx, column=3, value=item.get("hsn", "") or "—").alignment = Alignment(horizontal="center")
-        ws.cell(row=row_idx, column=4, value=f"{item.get('gst', 18.0)}%").alignment = Alignment(horizontal="center")
-        ws.cell(row=row_idx, column=5, value=int(item.get("qty", 1))).alignment = Alignment(horizontal="center")
+        ws.cell(row=row_idx, column=4, value=int(item.get("qty", 1))).alignment = Alignment(horizontal="center")
         
-        for c in range(1, 6):
+        for c in range(1, 5):
             cell = ws.cell(row=row_idx, column=c)
             cell.font = font_regular
             cell.border = border_thin
@@ -1934,11 +1933,11 @@ async def download_order_book_excel(request: Request):
 
     # Prepared By
     row_idx += 2
-    ws.cell(row=row_idx, column=4, value="Prepared By:").font = font_bold
-    ws.cell(row=row_idx, column=5, value="__________________").font = font_regular
+    ws.cell(row=row_idx, column=3, value="Prepared By:").font = font_bold
+    ws.cell(row=row_idx, column=4, value="__________________").font = font_regular
 
     # Set column widths
-    column_widths = [6, 45, 12, 10, 14]
+    column_widths = [6, 45, 12, 14]
     for i, w in enumerate(column_widths, 1):
         ws.column_dimensions[get_column_letter(i)].width = w
 

@@ -972,7 +972,6 @@
                                 <th>Part No</th>
                                 <th>Description</th>
                                 <th style="width:140px;">HSN</th>
-                                <th style="width:100px;">GST %</th>
                                 <th style="width:110px;">Order Qty</th>
                                 <th style="width:60px;"></th>
                             </tr>
@@ -2001,11 +2000,6 @@ function renderObRows() {
                 <input type="text" value="${r.hsn}"
                     onchange="obRows[${i}].hsn = this.value; renderObRows();"
                     class="q-table-input" placeholder="HSN" style="width:100px;">
-            </td>
-            <td>
-                <input type="number" value="${r.gst}" min="0" max="100"
-                    onchange="obRows[${i}].gst = parseFloat(this.value)||0; renderObRows();"
-                    class="q-table-input" style="width:65px;">
             </td>
             <td>
                 <input type="number" value="${r.qty}" min="1"
