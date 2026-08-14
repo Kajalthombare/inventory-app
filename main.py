@@ -18,6 +18,8 @@ from database import Base
 
 from jinja2 import Environment, FileSystemLoader
 import os
+from chatbot_agent import query_chatbot
+
 
 # ---------------- PROCESS ORDER ----------------
 
@@ -2629,6 +2631,25 @@ def get_order_items():
 
     db.close()
     return result
+
+from pydantic import BaseModel
+from typing import List
+
+class ChatMessage(BaseModel):
+    role: str
+    text: str
+
+class ChatbotRequest(BaseModel):
+    message: str
+    history: List[ChatMessage] = []
+
+@app.post("/chatbot/query")
+async def chatbot_query(request: Request, data: ChatbotRequest):
+    if not request.session.get("user"):
+        return {"response": "⚠️ Unauthorized: Please log in to access the chatbot."}
+    
+    response_text = query_chatbot(data.message, [h.dict() for h in data.history])
+    return {"response": response_text}
 
 import os
 
