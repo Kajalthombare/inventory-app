@@ -2714,6 +2714,25 @@ def import_pdf_data():
     db.close()
 
     return {"message": "PDF imported successfully"}
+@app.get("/view_db_invoices_temp_debug")
+def view_db_invoices_temp_debug():
+    db = SessionLocal()
+    invoices = db.execute(text("SELECT id, invoice_no, customer_name, date, grand_total FROM invoices ORDER BY id DESC LIMIT 5")).fetchall()
+    items = db.execute(text("SELECT id, invoice_id, part_no, quantity, rate, amount FROM invoice_items ORDER BY id DESC LIMIT 5")).fetchall()
+    db.close()
+    # Convert datetime objects to string
+    inv_list = []
+    for r in invoices:
+        d = dict(r._mapping)
+        if d.get("date"):
+            d["date"] = str(d["date"])
+        inv_list.append(d)
+    return {
+        "invoices": inv_list,
+        "items": [dict(r._mapping) for r in items]
+    }
+
+
 @app.get("/sales")
 def get_sales(start: str, end: str):
     db = SessionLocal()
