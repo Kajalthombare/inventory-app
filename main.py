@@ -2714,18 +2714,6 @@ def import_pdf_data():
     db.close()
 
     return {"message": "PDF imported successfully"}
-@app.get("/view_db_invoices_temp_debug")
-def view_db_invoices_temp_debug():
-    import os
-    from database import DATABASE_URL
-    return {
-        "database_url_from_db_py": DATABASE_URL,
-        "env_keys": list(os.environ.keys()),
-        "has_database_url": "DATABASE_URL" in os.environ,
-        "database_url_val": os.environ.get("DATABASE_URL")
-    }
-
-
 @app.get("/sales")
 def get_sales(start: str, end: str):
     db = SessionLocal()
