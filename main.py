@@ -1488,6 +1488,16 @@ def safe_format_date(d):
         return str(d)
 
 
+def convert_html_to_pdf(html_content: str) -> bytes:
+    from xhtml2pdf import pisa
+    import io
+    result = io.BytesIO()
+    pisa_status = pisa.CreatePDF(io.BytesIO(html_content.encode("utf-8")), result)
+    if not pisa_status.err:
+        return result.getvalue()
+    raise ValueError(f"xhtml2pdf error: {pisa_status.err}")
+
+
 @app.get("/view_quotation_saved/{q_id}", response_class=HTMLResponse)
 def view_quotation_saved(q_id: int):
     db = SessionLocal()
@@ -1615,7 +1625,7 @@ def download_quotation_pdf_file(q_id: int):
     )
     
     try:
-        pdf_bytes = pdfkit.from_string(html, False)
+        pdf_bytes = convert_html_to_pdf(html)
         return StreamingResponse(
             io.BytesIO(pdf_bytes),
             media_type="application/pdf",
@@ -1732,7 +1742,7 @@ async def send_email_quotation(q_id: int, request: Request):
     # Try generating PDF to attach to email
     pdf_bytes = None
     try:
-        pdf_bytes = pdfkit.from_string(html, False)
+        pdf_bytes = convert_html_to_pdf(html)
     except Exception:
         pass
         
