@@ -2147,7 +2147,7 @@ function shareWhatsApp(mobile, quotationNo, id, grandTotal) {
     window.open(`https://wa.me/${sanitizedPhone}?text=${encodeURIComponent(text)}`, '_blank');
 }
 
-async function shareEmail(email, quotationNo, id, grandTotal) {
+function shareEmail(email, quotationNo, id, grandTotal) {
     let toEmail = email ? email.trim() : '';
     if (!toEmail || toEmail === 'None' || toEmail === '—') {
         toEmail = prompt("Enter Customer Email Address:");
@@ -2159,30 +2159,14 @@ async function shareEmail(email, quotationNo, id, grandTotal) {
         return;
     }
     
-    alert(`Sending email to ${toEmail} via server. Please wait...`);
-    
-    try {
-        const res = await fetch(`/send_email_quotation/${id}?email=${encodeURIComponent(toEmail)}`, { method: 'POST' });
-        const data = await res.json();
-        if (data.ok) {
-            alert(`✅ Email sent successfully to ${toEmail}`);
-        } else if (data.error === "SMTP_NOT_CONFIGURED" || data.error.includes("unreachable") || data.error.includes("Network") || data.error.includes("time") || data.error.includes("connect")) {
-            const fallback = confirm(`SMTP email sending is not configured or is blocked by the server's network.\n\nWould you like to open your local email client (e.g., Outlook, Gmail app) to send the proforma invoice instead?`);
-            if (fallback) {
-                const subject = `Proforma Invoice ${quotationNo} - Mahindra Pro Spares`;
-                let body = `Dear Customer,\n\nPlease find the Proforma Invoice ${quotationNo} from Mahindra Pro Spares attached below.\n\n`;
-                if (grandTotal && parseFloat(grandTotal) > 0) {
-                    body += `Grand Total: ₹ ${parseFloat(grandTotal).toLocaleString('en-IN', {minimumFractionDigits:2})}\n\n`;
-                }
-                body += `Thank you for your business!`;
-                window.location.href = `mailto:${toEmail}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
-            }
-        } else {
-            alert(`Failed to send email: ${data.error}`);
-        }
-    } catch (err) {
-        alert(`Error communicating with the server: ${err}`);
+    const subject = `Proforma Invoice ${quotationNo} - Mahindra Pro Spares`;
+    let body = `Dear Customer,\n\nPlease find the Proforma Invoice ${quotationNo} from Mahindra Pro Spares attached below.\n\n`;
+    if (grandTotal && parseFloat(grandTotal) > 0) {
+        body += `Grand Total: ₹ ${parseFloat(grandTotal).toLocaleString('en-IN', {minimumFractionDigits:2})}\n\n`;
     }
+    body += `Thank you for your business!`;
+    
+    window.location.href = `mailto:${toEmail}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
 }
 
 function exportAllQuotationsExcel(){
