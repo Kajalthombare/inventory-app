@@ -2716,6 +2716,15 @@ def import_pdf_data():
     return {"message": "PDF imported successfully"}
 @app.get("/view_db_invoices_temp_debug")
 def view_db_invoices_temp_debug():
+    from database import DATABASE_URL
+    # Mask password
+    masked_url = DATABASE_URL
+    if "@" in DATABASE_URL:
+        parts = DATABASE_URL.split("@")
+        cred_parts = parts[0].split(":")
+        if len(cred_parts) > 2:
+            masked_url = f"{cred_parts[0]}:{cred_parts[1]}:****@{parts[1]}"
+    
     db = SessionLocal()
     invoices = db.execute(text("SELECT id, invoice_no, customer_name, date, grand_total FROM invoices ORDER BY id DESC LIMIT 5")).fetchall()
     items = db.execute(text("SELECT id, invoice_id, part_no, quantity, rate, amount FROM invoice_items ORDER BY id DESC LIMIT 5")).fetchall()
@@ -2728,6 +2737,7 @@ def view_db_invoices_temp_debug():
             d["date"] = str(d["date"])
         inv_list.append(d)
     return {
+        "database_url": masked_url,
         "invoices": inv_list,
         "items": [dict(r._mapping) for r in items]
     }
