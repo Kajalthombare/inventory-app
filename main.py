@@ -499,7 +499,7 @@ def export_excel(
             "Purchase Rate": prate,
             "Total Purchase Cost": round(pcost, 2),
             "Profit": round(profit, 2),
-            "Date": r.date.strftime("%Y-%m-%d %H:%M:%S") if r.date else ""
+            "Date": safe_format_datetime(r.date)
         })
 
     df = pd.DataFrame(rows) if rows else pd.DataFrame(columns=[
@@ -1498,6 +1498,17 @@ def convert_html_to_pdf(html_content: str) -> bytes:
     raise ValueError(f"xhtml2pdf error: {pisa_status.err}")
 
 
+def safe_format_datetime(dt):
+    if not dt:
+        return ""
+    if isinstance(dt, str):
+        return dt.split(".")[0]
+    try:
+        return dt.strftime("%Y-%m-%d %H:%M:%S")
+    except Exception:
+        return str(dt)
+
+
 @app.get("/view_quotation_saved/{q_id}", response_class=HTMLResponse)
 def view_quotation_saved(q_id: int):
     db = SessionLocal()
@@ -1983,7 +1994,7 @@ def export_all_quotations_excel(
             "SGST": round(sgst, 2),
             "Grand Total": round(grand, 2),
             "Saved Amount": round(saved, 2),
-            "Date": r.date.strftime("%Y-%m-%d %H:%M:%S") if r.date else ""
+            "Date": safe_format_datetime(r.date)
         })
 
     df = pd.DataFrame(rows) if rows else pd.DataFrame(columns=[
@@ -2526,7 +2537,7 @@ def sales_summary(
         profit = taxable - pcost
         items_list.append({
             "invoice_id": r.invoice_id,
-            "date": r.date.strftime("%Y-%m-%d %H:%M:%S") if r.date else "",
+            "date": safe_format_datetime(r.date),
             "invoice_no": r.invoice_no,
             "customer_name": r.customer_name,
             "part_no": r.part_no,
@@ -2607,7 +2618,7 @@ def purchase_summary(
             "rate": float(r.rate or 0.0),
             "discount": float(r.discount or 0.0),
             "amount": float(r.amount or 0.0),
-            "date": r.date.strftime("%Y-%m-%d %H:%M:%S") if r.date else ""
+            "date": safe_format_datetime(r.date)
         } for r in items_result]
     }
 
