@@ -439,7 +439,7 @@ def export_excel(
         "FROM invoice_items ii",
         "JOIN invoices i ON ii.invoice_id = i.id",
         "LEFT JOIN products p ON ii.part_no = p.part_no",
-        "WHERE DATE(i.date) BETWEEN :start AND :end"
+        "WHERE CAST(i.date AS DATE) BETWEEN :start AND :end"
     ]
     
     params = {
@@ -1930,7 +1930,7 @@ def export_all_quotations_excel(
     sql_parts = [
         "FROM quotation_items qi",
         "JOIN quotations q ON qi.quotation_id = q.id",
-        "WHERE DATE(q.date) BETWEEN :start AND :end"
+        "WHERE CAST(q.date AS DATE) BETWEEN :start AND :end"
     ]
     params = {
         "start": start_date,
@@ -2463,7 +2463,7 @@ def sales_summary(
         "FROM invoice_items ii",
         "JOIN invoices i ON ii.invoice_id = i.id",
         "LEFT JOIN products p ON ii.part_no = p.part_no",
-        "WHERE DATE(i.date) BETWEEN :start AND :end"
+        "WHERE CAST(i.date AS DATE) BETWEEN :start AND :end"
     ]
     
     params = {
@@ -2568,14 +2568,14 @@ def purchase_summary(
             COUNT(*) as total_purchases,
             SUM(amount) as total_amount
         FROM purchases
-        WHERE DATE(date) BETWEEN :start AND :end
+        WHERE CAST(date AS DATE) BETWEEN :start AND :end
     """
     
     items_query = """
         SELECT 
             id, vendor_name, part_no, description, hsn, quantity, rate, discount, amount, date
         FROM purchases
-        WHERE DATE(date) BETWEEN :start AND :end
+        WHERE CAST(date AS DATE) BETWEEN :start AND :end
     """
     
     params = {
@@ -2624,7 +2624,7 @@ def export_purchase_excel(
         SELECT 
             date, vendor_name, part_no, description, hsn, quantity, rate, discount, amount
         FROM purchases
-        WHERE DATE(date) BETWEEN :start AND :end
+        WHERE CAST(date AS DATE) BETWEEN :start AND :end
     """
     
     params = {
@@ -2709,8 +2709,8 @@ def get_sales(start: str, end: str):
 
     rows = db.execute(text("""
         SELECT * FROM invoices
-        WHERE DATE(created_at) BETWEEN :s AND :e
-        ORDER BY created_at DESC
+        WHERE CAST(date AS DATE) BETWEEN :s AND :e
+        ORDER BY date DESC
     """), {
         "s": start,
         "e": end
