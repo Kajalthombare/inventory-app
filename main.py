@@ -1673,7 +1673,7 @@ def send_smtp_email(to_email: str, subject: str, html_body: str, attachment_byte
 
 
 @app.post("/send_email_quotation/{q_id}")
-async def send_email_quotation(q_id: int, request: Request):
+async def send_email_quotation(q_id: int, request: Request, email: str = Query(None)):
     db = SessionLocal()
     quotation = db.execute(text("""
         SELECT id, quotation_no, customer_name, customer_address, customer_gstin, customer_mobile, customer_email, date
@@ -1684,7 +1684,7 @@ async def send_email_quotation(q_id: int, request: Request):
         db.close()
         return {"ok": False, "error": "Proforma Invoice not found"}
         
-    to_email = (quotation.customer_email or "").strip()
+    to_email = email.strip() if email else (quotation.customer_email or "").strip()
     if not to_email:
         db.close()
         return {"ok": False, "error": "CUSTOMER_EMAIL_MISSING"}

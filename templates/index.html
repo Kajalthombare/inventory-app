@@ -2123,7 +2123,7 @@ async function loadQuotationList(){
 
 function shareWhatsApp(mobile, quotationNo, id, grandTotal) {
     let phone = mobile ? mobile.trim() : '';
-    if (!phone) {
+    if (!phone || phone === 'None' || phone === '—') {
         phone = prompt("Enter Customer WhatsApp Number (e.g. 9876543210):");
         if (phone === null) return;
         phone = phone.trim();
@@ -2149,7 +2149,7 @@ function shareWhatsApp(mobile, quotationNo, id, grandTotal) {
 
 async function shareEmail(email, quotationNo, id, grandTotal) {
     let toEmail = email ? email.trim() : '';
-    if (!toEmail) {
+    if (!toEmail || toEmail === 'None' || toEmail === '—') {
         toEmail = prompt("Enter Customer Email Address:");
         if (toEmail === null) return;
         toEmail = toEmail.trim();
@@ -2162,7 +2162,7 @@ async function shareEmail(email, quotationNo, id, grandTotal) {
     alert(`Sending email to ${toEmail} via server. Please wait...`);
     
     try {
-        const res = await fetch(`/send_email_quotation/${id}`, { method: 'POST' });
+        const res = await fetch(`/send_email_quotation/${id}?email=${encodeURIComponent(toEmail)}`, { method: 'POST' });
         const data = await res.json();
         if (data.ok) {
             alert(`✅ Email sent successfully to ${toEmail}`);
