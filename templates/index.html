@@ -2166,8 +2166,8 @@ async function shareEmail(email, quotationNo, id, grandTotal) {
         const data = await res.json();
         if (data.ok) {
             alert(`✅ Email sent successfully to ${toEmail}`);
-        } else if (data.error === "SMTP_NOT_CONFIGURED") {
-            const fallback = confirm(`SMTP Email is not configured on the server.\n\nWould you like to open your local email client (e.g., Outlook, Gmail app) to send the proforma invoice instead?`);
+        } else if (data.error === "SMTP_NOT_CONFIGURED" || data.error.includes("unreachable") || data.error.includes("Network") || data.error.includes("time") || data.error.includes("connect")) {
+            const fallback = confirm(`SMTP email sending is not configured or is blocked by the server's network.\n\nWould you like to open your local email client (e.g., Outlook, Gmail app) to send the proforma invoice instead?`);
             if (fallback) {
                 const subject = `Proforma Invoice ${quotationNo} - Mahindra Pro Spares`;
                 let body = `Dear Customer,\n\nPlease find the Proforma Invoice ${quotationNo} from Mahindra Pro Spares attached below.\n\n`;
