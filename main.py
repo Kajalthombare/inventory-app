@@ -19,6 +19,9 @@ from database import Base
 from jinja2 import Environment, FileSystemLoader
 import os
 from chatbot_agent import query_chatbot
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 
 
 # ---------------- PROCESS ORDER ----------------
@@ -1216,8 +1219,9 @@ async def save_quotation(request: Request):
             hsn=r.get("hsn", "")
         ))
     db.commit()
+    q_id = quot.id
     db.close()
-    return {"ok": True, "quotation_no": q_no}
+    return {"ok": True, "quotation_no": q_no, "id": q_id}
 
 @app.get("/quotations")
 def list_quotations():
@@ -1535,6 +1539,114 @@ def view_quotation_saved(q_id: int):
         buyer_email=quotation.customer_email
     )
     return HTMLResponse(content=html)
+
+
+def send_smtp_email(to_email: str, subject: str, html_body: str):
+    smtp_host = os.environ.get("SMTP_HOST", "").strip()
+    smtp_port = os.environ.get("SMTP_PORT", "").strip()
+    smtp_user = os.environ.get("SMTP_USER", "").strip()
+    smtp_password = os.environ.get("SMTP_PASSWORD", "").strip()
+    smtp_from = os.environ.get("SMTP_FROM", smtp_user).strip()
+    
+    if not smtp_host or not smtp_user or not smtp_password:
+        raise ValueError("SMTP_NOT_CONFIGURED")
+        
+    msg = MIMEMultipart("alternative")
+    msg["Subject"] = subject
+    msg["From"] = smtp_from
+    msg["To"] = to_email
+    
+    part = MIMEText(html_body, "html")
+    msg.attach(part)
+    
+    port = int(smtp_port) if smtp_port.isdigit() else 587
+    if port == 465:
+        server = smtplib.SMTP_SSL(smtp_host, port)
+    else:
+        server = smtplib.SMTP(smtp_host, port)
+        server.starttls()
+        
+    server.login(smtp_user, smtp_password)
+    server.sendmail(smtp_from, to_email, msg.as_string())
+    server.quit()
+
+
+@app.post("/send_email_quotation/{q_id}")
+async def send_email_quotation(q_id: int, request: Request):
+    db = SessionLocal()
+    quotation = db.execute(text("""
+        SELECT id, quotation_no, customer_name, customer_address, customer_gstin, customer_mobile, customer_email, date
+        FROM quotations WHERE id = :id
+    """), {"id": q_id}).fetchone()
+    
+    if not quotation:
+        db.close()
+        return {"ok": False, "error": "Proforma Invoice not found"}
+        
+    to_email = (quotation.customer_email or "").strip()
+    if not to_email:
+        db.close()
+        return {"ok": False, "error": "CUSTOMER_EMAIL_MISSING"}
+        
+    items_rows = db.execute(text("""
+        SELECT part_no, description, rate, qty, discount, amount, hsn
+        FROM quotation_items WHERE quotation_id = :qid
+    """), {"qid": q_id}).fetchall()
+    db.close()
+
+    items = []
+    subtotal = 0
+    savings = 0.0
+    for r in items_rows:
+        sub = r.rate * r.qty
+        disc = sub * ((r.discount or 0) / 100)
+        taxable = sub - disc
+        items.append({
+            "part_no": r.part_no,
+            "description": r.description,
+            "hsn": r.hsn,
+            "rate": r.rate,
+            "qty": r.qty,
+            "discount": r.discount or 0,
+            "taxable": round(taxable, 2)
+        })
+        subtotal += taxable
+        savings += disc
+
+    cgst = round(subtotal * 0.09, 2)
+    sgst = round(subtotal * 0.09, 2)
+    total = round(subtotal + cgst + sgst, 2)
+    
+    env = Environment(loader=FileSystemLoader("templates"))
+    template = env.get_template("quotation_pdf.html")
+
+    html = template.render(
+        title="PROFORMA INVOICE",
+        label="Proforma Invoice No:",
+        invoice_no=quotation.quotation_no,
+        items=items,
+        subtotal=round(subtotal, 2),
+        cgst=cgst,
+        sgst=sgst,
+        total=total,
+        savings=round(savings, 2),
+        date=quotation.date.strftime("%d-%b-%Y") if quotation.date else "",
+        buyer_name=quotation.customer_name,
+        buyer_address=quotation.customer_address,
+        buyer_gstin=quotation.customer_gstin,
+        buyer_mobile=quotation.customer_mobile,
+        buyer_email=quotation.customer_email
+    )
+    
+    try:
+        send_smtp_email(to_email, f"Proforma Invoice {quotation.quotation_no} - Mahindra Pro Spares", html)
+        return {"ok": True}
+    except ValueError as ve:
+        if str(ve) == "SMTP_NOT_CONFIGURED":
+            return {"ok": False, "error": "SMTP_NOT_CONFIGURED"}
+        return {"ok": False, "error": str(ve)}
+    except Exception as e:
+        return {"ok": False, "error": f"Failed to send email: {str(e)}"}
 
 
 @app.get("/view_invoice_saved/{i_id}", response_class=HTMLResponse)

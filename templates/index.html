@@ -2082,8 +2082,20 @@ async function saveQuotation(){
         body: JSON.stringify({rows: filtered, customer_name: customer, customer_address: address, customer_gstin: gstin, customer_mobile: mobile, customer_email: email})});
     const data = await res.json();
     if (data.ok) {
-        alert(`✅ Proforma Invoice saved: ${data.quotation_no}`);
         loadQuotationList();
+        
+        // Dynamic sharing dialog
+        setTimeout(() => {
+            const share = confirm(`✅ Proforma Invoice saved: ${data.quotation_no}\n\nWould you like to send/share this quotation with the customer now?`);
+            if (share) {
+                const opt = prompt("How would you like to share this proforma invoice?\nType 'w' for WhatsApp\nType 'e' for Email", "w");
+                if (opt && opt.toLowerCase().trim() === 'w') {
+                    shareWhatsApp(mobile, data.quotation_no, data.id, '');
+                } else if (opt && opt.toLowerCase().trim() === 'e') {
+                    shareEmail(email, data.quotation_no, data.id, '');
+                }
+            }
+        }, 100);
     } else { alert('Error: ' + (data.error||'Unknown')); }
 }
 
@@ -2092,7 +2104,7 @@ async function loadQuotationList(){
     const data = await res.json();
     if (!data.length){ document.getElementById('quotation-list').innerHTML='<div style="color:var(--text-muted);font-size:13px;">No proforma invoices yet</div>'; return; }
     document.getElementById('quotation-list').innerHTML = `<table class="data-table" style="font-size:12px;">
-        <thead><tr><th>Proforma Invoice No</th><th>Customer</th><th>Date</th><th>Grand Total (₹)</th><th style="width:160px;text-align:center;">Actions</th></tr></thead>
+        <thead><tr><th>Proforma Invoice No</th><th>Customer</th><th>Date</th><th>Grand Total (₹)</th><th style="width:280px;text-align:center;">Actions</th></tr></thead>
         <tbody>${data.map(q=>`<tr>
             <td style="font-weight:600;">${q.quotation_no}</td>
             <td>${q.customer_name||'—'}</td>
@@ -2101,9 +2113,77 @@ async function loadQuotationList(){
             <td style="text-align:center;">
                 <a href="/view_quotation_saved/${q.id}" target="_blank" class="btn btn-ghost btn-sm" style="padding:2px 8px;font-size:11px;color:var(--primary);text-decoration:none;">👁️ View</a>
                 <a href="/export_quotation_excel/${q.id}" class="btn btn-ghost btn-sm" style="padding:2px 8px;font-size:11px;color:var(--success);text-decoration:none;">⬇ Excel</a>
+                <button onclick="shareWhatsApp('${q.customer_mobile||''}', '${q.quotation_no}', '${q.id}', '${q.grand_total}')" class="btn btn-ghost btn-sm" style="padding:2px 8px;font-size:11px;color:#25D366;border:none;background:none;cursor:pointer;">💬 WhatsApp</button>
+                <button onclick="shareEmail('${q.customer_email||''}', '${q.quotation_no}', '${q.id}', '${q.grand_total}')" class="btn btn-ghost btn-sm" style="padding:2px 8px;font-size:11px;color:#0078D4;border:none;background:none;cursor:pointer;">✉️ Email</button>
             </td>
         </tr>`).join('')}</tbody>
     </table>`;
+}
+
+function shareWhatsApp(mobile, quotationNo, id, grandTotal) {
+    let phone = mobile ? mobile.trim() : '';
+    if (!phone) {
+        phone = prompt("Enter Customer WhatsApp Number (e.g. 9876543210):");
+        if (phone === null) return;
+        phone = phone.trim();
+    }
+    if (!phone) {
+        alert("Mobile number is required to share via WhatsApp.");
+        return;
+    }
+    // Sanitize phone number (digits only)
+    let sanitizedPhone = phone.replace(/\D/g, "");
+    if (sanitizedPhone.length === 10) {
+        sanitizedPhone = "91" + sanitizedPhone; // Default to India country code
+    }
+    
+    const url = `${window.location.origin}/view_quotation_saved/${id}`;
+    let text = `Dear Customer,\n\nPlease find the link to view your Proforma Invoice *${quotationNo}* from *Mahindra Pro Spares*:\n\n🔗 ${url}\n\n`;
+    if (grandTotal && parseFloat(grandTotal) > 0) {
+        text += `Grand Total: ₹ ${parseFloat(grandTotal).toLocaleString('en-IN', {minimumFractionDigits:2})}\n\n`;
+    }
+    text += `Thank you for your business!`;
+    
+    window.open(`https://wa.me/${sanitizedPhone}?text=${encodeURIComponent(text)}`, '_blank');
+}
+
+async function shareEmail(email, quotationNo, id, grandTotal) {
+    let toEmail = email ? email.trim() : '';
+    if (!toEmail) {
+        toEmail = prompt("Enter Customer Email Address:");
+        if (toEmail === null) return;
+        toEmail = toEmail.trim();
+    }
+    if (!toEmail) {
+        alert("Email address is required to share via Email.");
+        return;
+    }
+    
+    alert(`Sending email to ${toEmail} via server. Please wait...`);
+    
+    try {
+        const res = await fetch(`/send_email_quotation/${id}`, { method: 'POST' });
+        const data = await res.json();
+        if (data.ok) {
+            alert(`✅ Email sent successfully to ${toEmail}`);
+        } else if (data.error === "SMTP_NOT_CONFIGURED") {
+            const fallback = confirm(`SMTP Email is not configured on the server.\n\nWould you like to open your local email client (e.g., Outlook, Gmail app) to send the proforma invoice instead?`);
+            if (fallback) {
+                const url = `${window.location.origin}/view_quotation_saved/${id}`;
+                const subject = `Proforma Invoice ${quotationNo} - Mahindra Pro Spares`;
+                let body = `Dear Customer,\n\nPlease find the link to view your Proforma Invoice ${quotationNo} from Mahindra Pro Spares:\n\n${url}\n\n`;
+                if (grandTotal && parseFloat(grandTotal) > 0) {
+                    body += `Grand Total: ₹ ${parseFloat(grandTotal).toLocaleString('en-IN', {minimumFractionDigits:2})}\n\n`;
+                }
+                body += `Thank you for your business!`;
+                window.location.href = `mailto:${toEmail}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+            }
+        } else {
+            alert(`Failed to send email: ${data.error}`);
+        }
+    } catch (err) {
+        alert(`Error communicating with the server: ${err}`);
+    }
 }
 
 function exportAllQuotationsExcel(){
