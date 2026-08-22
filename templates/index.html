@@ -1426,6 +1426,29 @@
                     </div>
                 </div>
             </div>
+            
+            <!-- ── BULK IMPORT STOCK CARD ── -->
+            <div class="section-card" id="stock-import-card" style="display: block; margin-bottom: 24px;">
+                <div class="section-header">
+                    <div class="section-title">📥 Bulk Import Stock</div>
+                </div>
+                <div class="section-body">
+                    <form id="stockImportForm" enctype="multipart/form-data" class="form-row" style="align-items: center; gap: 16px;">
+                        <div class="form-field" style="flex: 1; min-width: 200px; margin: 0;">
+                            <label>Choose CSV or Excel File</label>
+                            <input type="file" name="file" accept=".csv,.xlsx,.xls" required class="form-input">
+                        </div>
+                        <div class="form-field" style="width: 180px; margin: 0;">
+                            <label>Import Mode</label>
+                            <select name="mode" class="form-input">
+                                <option value="append">Update & Add Stock (Append)</option>
+                                <option value="replace">Wipe & Replace Stock (Overwrite)</option>
+                            </select>
+                        </div>
+                        <button type="button" onclick="uploadStock()" class="btn btn-success" style="margin-top: 18px; height: 38px;">Import Stock</button>
+                    </form>
+                </div>
+            </div>
 
             <!-- ── PRODUCT TABLE (Stock Data Card) ── -->
             <div class="section-card" id="stock-data-card" style="display: block;">
@@ -2351,6 +2374,38 @@ async function uploadOrder(){
     const formData = new FormData(document.getElementById('orderForm'));
     await fetch('/upload_order',{method:'POST',body:formData});
     alert('Order uploaded successfully!');
+}
+
+// ── Upload stock ──
+async function uploadStock() {
+    const form = document.getElementById('stockImportForm');
+    const fileInput = form.querySelector('input[type="file"]');
+    if (!fileInput.files.length) {
+        alert('Please select a file first.');
+        return;
+    }
+    const formData = new FormData(form);
+    const btn = form.querySelector('button');
+    btn.disabled = true;
+    btn.textContent = '⏳ Importing...';
+    try {
+        const res = await fetch('/upload_stock', {
+            method: 'POST',
+            body: formData
+        });
+        const data = await res.json();
+        if (res.ok) {
+            alert(data.message || 'Stock imported successfully!');
+            location.reload();
+        } else {
+            alert('Error: ' + (data.error || 'Unknown error occurred'));
+        }
+    } catch (e) {
+        alert('Network/Server error: ' + e);
+    } finally {
+        btn.disabled = false;
+        btn.textContent = 'Import Stock';
+    }
 }
 
 // ── Reload helper ──

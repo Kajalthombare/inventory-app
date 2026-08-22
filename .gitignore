@@ -8,4 +8,4 @@ __pycache__/
 *.pdf
 .env.DS_Store
 .env
-
+.DS_Store

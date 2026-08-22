@@ -574,7 +574,109 @@ def upload_excel(file: UploadFile = File(...)):
     db.commit()
     db.close()
 
-    return {"message": "Price master uploaded"}
+@app.post("/upload_stock")
+def upload_stock(file: UploadFile = File(...), mode: str = Form("append")):
+    db = SessionLocal()
+    try:
+        # Read Excel or CSV
+        if file.filename.endswith(".csv"):
+            df = pd.read_csv(file.file)
+        else:
+            df = pd.read_excel(file.file, engine="openpyxl")
+
+        # Standardize column headers to uppercase and strip whitespace
+        df.columns = [col.strip().upper() for col in df.columns]
+        df = df.fillna("")
+
+        if mode == "replace":
+            db.execute(text("DELETE FROM products"))
+            db.commit()
+
+        imported_count = 0
+        for _, row in df.iterrows():
+            part_no = str(row.get("PART NO", row.get("PART_NO", row.get("PARTNUMBER", "")))).strip().upper()
+            if not part_no:
+                continue
+
+            description = str(row.get("DESCRIPTION", row.get("PART DESC", row.get("PART DESCRIPTION", "")))).strip()
+            hsn = str(row.get("HSN", row.get("HSN CODE", ""))).strip()
+            
+            try:
+                gst = float(row.get("GST", row.get("GST %", 18.0)))
+            except (ValueError, TypeError):
+                gst = 18.0
+
+            try:
+                qty = int(row.get("QTY", row.get("QUANTITY", row.get("STOCK", 0))))
+            except (ValueError, TypeError):
+                qty = 0
+
+            try:
+                rate = float(row.get("RATE", row.get("PURCHASE RATE", row.get("PRICE", 0.0))))
+            except (ValueError, TypeError):
+                rate = 0.0
+
+            try:
+                discount = float(row.get("DISCOUNT", row.get("DISC", row.get("DISCOUNT %", 0.0))))
+            except (ValueError, TypeError):
+                discount = 0.0
+
+            vendor_name = str(row.get("VENDOR NAME", row.get("VENDOR", ""))).strip()
+            vendor_address = str(row.get("VENDOR ADDRESS", row.get("ADDRESS", ""))).strip()
+            vendor_mobile = str(row.get("VENDOR MOBILE", row.get("MOBILE", ""))).strip()
+            vendor_gstin = str(row.get("VENDOR GSTIN", row.get("GSTIN", ""))).strip()
+            vendor_email = str(row.get("VENDOR EMAIL", row.get("EMAIL", ""))).strip()
+
+            amount = (qty * rate) - ((qty * rate) * (discount / 100)) if qty > 0 else 0.0
+
+            existing = None
+            if mode == "append":
+                existing = db.query(Product).filter(Product.part_no == part_no).first()
+
+            if existing:
+                existing.quantity += qty
+                if rate > 0:
+                    existing.rate = rate
+                if discount > 0:
+                    existing.discount = discount
+                existing.amount = (existing.quantity * existing.rate) - ((existing.quantity * existing.rate) * (existing.discount / 100))
+                if vendor_name:
+                    existing.vendor_name = vendor_name
+                if vendor_address:
+                    existing.vendor_address = vendor_address
+                if vendor_mobile:
+                    existing.vendor_mobile = vendor_mobile
+                if vendor_gstin:
+                    existing.vendor_gstin = vendor_gstin
+                if vendor_email:
+                    existing.vendor_email = vendor_email
+            else:
+                new_prod = Product(
+                    part_no=part_no,
+                    description=description,
+                    hsn=hsn,
+                    gst=gst,
+                    quantity=qty,
+                    rate=rate,
+                    discount=discount,
+                    amount=round(amount, 2),
+                    vendor_name=vendor_name,
+                    vendor_address=vendor_address,
+                    vendor_mobile=vendor_mobile,
+                    vendor_gstin=vendor_gstin,
+                    vendor_email=vendor_email
+                )
+                db.add(new_prod)
+            imported_count += 1
+
+        db.commit()
+        return {"message": f"Successfully imported {imported_count} products ({mode} mode)."}
+
+    except Exception as e:
+        db.rollback()
+        return {"error": str(e)}, 500
+    finally:
+        db.close()
 
 
 # ---------------- ADD PRODUCT ----------------
