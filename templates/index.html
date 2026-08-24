@@ -1356,6 +1356,7 @@
                 <div class="section-title">📖 Order Book <span style="font-size:11px;font-weight:400;color:var(--text-muted);margin-left:8px;">— Procure out-of-stock items (no rate/discount)</span></div>
                 <div style="display:flex;gap:8px;">
                     <button onclick="addObRow()" class="btn btn-ghost btn-sm">+ Add Row</button>
+                    <button onclick="openObNewItemModal(obRows.length)" class="btn btn-ghost btn-sm" style="color:var(--primary); font-weight:600;">✨ Add New Item</button>
                     <button onclick="refreshOrderBook()" class="btn btn-warning btn-sm">🔄 Refresh Out-of-Stock</button>
                     <button onclick="downloadObPDF()" class="btn btn-primary btn-sm">📄 Download PDF</button>
                     <button onclick="downloadObExcel()" class="btn btn-success btn-sm">⬇ Download Excel</button>
@@ -1375,6 +1376,44 @@
                         </thead>
                         <tbody id="ob_body"></tbody>
                     </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- ══ NEW ITEM MODAL (Order Book & Price Master) ══ -->
+        <div id="ob-new-item-modal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(15,23,42,0.6); backdrop-filter:blur(4px); z-index:9999; justify-content:center; align-items:center;">
+            <div style="background:#ffffff; border-radius:16px; padding:24px; width:450px; max-width:92%; box-shadow:0 20px 25px -5px rgba(0,0,0,0.15), 0 10px 10px -5px rgba(0,0,0,0.06); border:1px solid var(--border);">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+                    <div style="font-size:16px; font-weight:700; color:var(--text);">✨ Add New Item to Order Book</div>
+                    <button onclick="closeObNewItemModal()" class="btn btn-ghost btn-sm" style="font-size:16px; padding:2px 8px; border:none;">✕</button>
+                </div>
+                <div style="font-size:12px; color:var(--text-muted); margin-bottom:16px; background:#f8fafc; padding:8px 12px; border-radius:8px; border:1px solid #e2e8f0;">
+                    Part No <strong id="ob_modal_pno_badge" style="color:var(--primary);"></strong> is not in database. Enter details below to add it to Order Book & Price Master.
+                </div>
+                <input type="hidden" id="ob_modal_row_index" value="">
+                <div style="display:flex; flex-direction:column; gap:12px;">
+                    <div>
+                        <label style="font-size:12px; font-weight:600; color:var(--text); display:block; margin-bottom:4px;">Part Number *</label>
+                        <input type="text" id="ob_modal_pno" class="form-input" placeholder="Part Number" style="width:100%;">
+                    </div>
+                    <div>
+                        <label style="font-size:12px; font-weight:600; color:var(--text); display:block; margin-bottom:4px;">Description *</label>
+                        <input type="text" id="ob_modal_desc" class="form-input" placeholder="Item Description (e.g. Oil Filter)" style="width:100%;" required>
+                    </div>
+                    <div style="display:flex; gap:12px;">
+                        <div style="flex:1;">
+                            <label style="font-size:12px; font-weight:600; color:var(--text); display:block; margin-bottom:4px;">HSN Code</label>
+                            <input type="text" id="ob_modal_hsn" class="form-input" placeholder="e.g. 8708" style="width:100%;">
+                        </div>
+                        <div style="flex:1;">
+                            <label style="font-size:12px; font-weight:600; color:var(--text); display:block; margin-bottom:4px;">Selling Rate / MRP (₹)</label>
+                            <input type="number" id="ob_modal_mrp" class="form-input" placeholder="0.00" step="any" style="width:100%;">
+                        </div>
+                    </div>
+                </div>
+                <div style="display:flex; justify-content:flex-end; gap:8px; margin-top:20px;">
+                    <button onclick="closeObNewItemModal()" class="btn btn-ghost">Cancel</button>
+                    <button onclick="saveObNewItem()" class="btn btn-primary">💾 Save & Auto-Fill</button>
                 </div>
             </div>
         </div>
@@ -2019,12 +2058,28 @@ async function acSearch(inputEl, listEl, onSelect) {
     acTimer = setTimeout(async () => {
         const res = await fetch(`/search_parts?q=${encodeURIComponent(q)}`);
         const data = await res.json();
-        if (!data.length) { listEl.style.display='none'; return; }
-        listEl.innerHTML = data.map(d =>
+        
+        let html = data.map(d =>
             `<div class="ac-item" onclick="acPick(this)" data-pno="${d.part_no}" data-desc="${d.description}" data-rate="${d.rate}" data-hsn="${d.hsn}" data-stock="">
                 <strong>${d.part_no}</strong> — ${d.description} &nbsp;<span style="color:#2563eb;">₹${d.rate.toFixed(2)}</span>
             </div>`
         ).join('');
+
+        const isOrderBook = listEl.id && listEl.id.startsWith('ob-ac-');
+        if (isOrderBook) {
+            const rowIdx = listEl.id.replace('ob-ac-', '');
+            const safeQ = q.toUpperCase().replace(/'/g, "\\'");
+            html += `<div class="ac-item" style="color:var(--primary); font-weight:600; border-top:1px dashed var(--border);" onclick="document.getElementById('${listEl.id}').style.display='none'; openObNewItemModal(${rowIdx}, '${safeQ}')">
+                ➕ Add "${q.toUpperCase()}" as New Item
+            </div>`;
+        }
+
+        if (!data.length && !isOrderBook) {
+            listEl.style.display = 'none';
+            return;
+        }
+
+        listEl.innerHTML = html;
         listEl._onSelect = onSelect;
         listEl.style.display = 'block';
     }, 250);
@@ -2706,7 +2761,7 @@ function renderObRows() {
             <td style="position:relative;">
                 <input id="ob-inp-${i}" value="${r.part_no}"
                     oninput="acSearch(this,document.getElementById('ob-ac-${i}'),d=>{obRows[${i}].part_no=d.part_no;obRows[${i}].description=d.description;obRows[${i}].hsn=d.hsn;obRows[${i}].gst=d.gst||18.0;renderObRows();})"
-                    onblur="obRows[${i}].part_no=this.value.trim().toUpperCase();this.value=obRows[${i}].part_no;"
+                    onblur="obRows[${i}].part_no=this.value.trim().toUpperCase();this.value=obRows[${i}].part_no;if(obRows[${i}].part_no)fetchObDetails(${i});"
                     class="q-table-input" placeholder="Part No or search…">
                 <div id="ob-ac-${i}" class="ac-list"></div>
             </td>
@@ -2731,6 +2786,84 @@ function renderObRows() {
         </tr>`;
     });
     document.getElementById('ob_body').innerHTML = html;
+}
+
+async function fetchObDetails(i) {
+    const pno = (obRows[i]?.part_no || '').trim().toUpperCase();
+    if (!pno) return;
+
+    try {
+        const res = await fetch(`/get_rate/${encodeURIComponent(pno)}`);
+        const d = await res.json();
+
+        if (d.description || d.hsn) {
+            if (d.description) obRows[i].description = d.description;
+            if (d.hsn) obRows[i].hsn = d.hsn;
+            renderObRows();
+        } else if (!obRows[i].description) {
+            // New item not found in DB & description is empty -> open New Item Modal
+            openObNewItemModal(i, pno);
+        }
+    } catch (e) {
+        console.error('Error fetching details:', e);
+    }
+}
+
+function openObNewItemModal(rowIndex, partNo = '') {
+    if (rowIndex >= obRows.length) {
+        obRows.push({ part_no: partNo, description: '', hsn: '', gst: 18.0, qty: 1 });
+        rowIndex = obRows.length - 1;
+    }
+    document.getElementById('ob_modal_row_index').value = rowIndex;
+    document.getElementById('ob_modal_pno').value = partNo || obRows[rowIndex]?.part_no || '';
+    document.getElementById('ob_modal_pno_badge').textContent = partNo ? `[${partNo}]` : (obRows[rowIndex]?.part_no ? `[${obRows[rowIndex].part_no}]` : '');
+    document.getElementById('ob_modal_desc').value = obRows[rowIndex]?.description || '';
+    document.getElementById('ob_modal_hsn').value = obRows[rowIndex]?.hsn || '';
+    document.getElementById('ob_modal_mrp').value = '';
+    document.getElementById('ob-new-item-modal').style.display = 'flex';
+    setTimeout(() => {
+        const descInput = document.getElementById('ob_modal_desc');
+        if (descInput) descInput.focus();
+    }, 100);
+}
+
+function closeObNewItemModal() {
+    document.getElementById('ob-new-item-modal').style.display = 'none';
+}
+
+async function saveObNewItem() {
+    const i = parseInt(document.getElementById('ob_modal_row_index').value);
+    const pno = document.getElementById('ob_modal_pno').value.trim().toUpperCase();
+    const desc = document.getElementById('ob_modal_desc').value.trim();
+    const hsn = document.getElementById('ob_modal_hsn').value.trim();
+    const mrp = parseFloat(document.getElementById('ob_modal_mrp').value) || 0;
+
+    if (!pno) { alert('Part Number is required'); return; }
+    if (!desc) { alert('Description is required'); return; }
+
+    // Update row in Order Book
+    if (!isNaN(i) && obRows[i]) {
+        obRows[i].part_no = pno;
+        obRows[i].description = desc;
+        obRows[i].hsn = hsn;
+        renderObRows();
+    } else {
+        obRows.push({ part_no: pno, description: desc, hsn: hsn, gst: 18.0, qty: 1 });
+        renderObRows();
+    }
+
+    // Save to Price Master database so it is remembered for future order books & invoices
+    try {
+        await fetch('/price_master/add', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ part_no: pno, description: desc, hsn: hsn, mrp: mrp })
+        });
+    } catch (e) {
+        console.error('Error saving to price master:', e);
+    }
+
+    closeObNewItemModal();
 }
 
 function addObRow() {
