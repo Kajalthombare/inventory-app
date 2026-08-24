@@ -1403,14 +1403,15 @@
                         <table class="data-table" id="purchase_table">
                             <thead>
                                 <tr>
-                                    <th style="width: 200px;">Part No</th>
+                                    <th style="width: 180px;">Part No</th>
                                     <th>Description</th>
-                                    <th style="width: 110px;">HSN</th>
-                                    <th style="width: 80px;">GST %</th>
-                                    <th style="width: 90px;">Qty</th>
-                                    <th style="width: 120px;">Rate (₹)</th>
-                                    <th style="width: 80px;">Disc %</th>
-                                    <th style="width: 130px;">Total (₹)</th>
+                                    <th style="width: 100px;">HSN</th>
+                                    <th style="width: 110px;">Location</th>
+                                    <th style="width: 70px;">GST %</th>
+                                    <th style="width: 80px;">Qty</th>
+                                    <th style="width: 100px;">Rate (₹)</th>
+                                    <th style="width: 70px;">Disc %</th>
+                                    <th style="width: 110px;">Total (₹)</th>
                                     <th style="width: 50px;"></th>
                                 </tr>
                             </thead>
@@ -1454,7 +1455,10 @@
             <div class="section-card" id="stock-data-card" style="display: block;">
                 <div class="section-header">
                     <div class="section-title">🗃 Stock Data</div>
-                    <span style="font-size:12px;color:var(--text-muted);">Total Value: <strong>₹ {{ total_value }}</strong></span>
+                    <div style="display:flex;gap:12px;align-items:center;">
+                        <span style="font-size:12px;color:var(--text-muted);">Total Value: <strong>₹ {{ total_value }}</strong></span>
+                        <button onclick="exportStockExcel()" class="btn btn-warning btn-sm">⬇ Export Stock Excel</button>
+                    </div>
                 </div>
                 <div class="table-wrap">
                     <table class="data-table" id="productTable">
@@ -1463,6 +1467,7 @@
                                 <th>Part No</th>
                                 <th>Description</th>
                                 <th>HSN</th>
+                                <th style="text-align:center;">Store Location</th>
                                 <th>GST %</th>
                                 <th>Qty</th>
                                 <th>Purchase Rate (₹)</th>
@@ -1477,6 +1482,13 @@
                                 <td style="font-weight:600;">{{ p.part_no }}</td>
                                 <td style="color:var(--text-muted);">{{ p.description }}</td>
                                 <td>{{ p.hsn }}</td>
+                                <td style="text-align:center;">
+                                    <span id="loc-badge-{{p.id}}" onclick="editLocation({{p.id}}, '{{ (p.location or '')|e }}')" 
+                                          style="cursor:pointer; display:inline-flex; align-items:center; gap:4px; padding:3px 8px; border-radius:12px; font-size:11px; font-weight:600; background:{% if p.location %}#eff6ff{% else %}#f1f5f9{% endif %}; color:{% if p.location %}#1d4ed8{% else %}#64748b{% endif %}; border:1px solid {% if p.location %}#bfdbfe{% else %}#cbd5e1{% endif %};" 
+                                          title="Click to edit store location">
+                                        📍 <span id="loc-text-{{p.id}}">{% if p.location %}{{ p.location }}{% else %}+ Set Loc{% endif %}</span> ✏️
+                                    </span>
+                                </td>
                                 <td>{{ p.gst }}%</td>
                                 <td>
                                     {% if p.quantity == 0 %}
@@ -1553,7 +1565,7 @@ document.getElementById('search').addEventListener('keypress', function(e){
 let purchaseRows = [];
 
 function addPurchaseRow() {
-    purchaseRows.push({ part_no: '', description: '', hsn: '', gst: 18.0, qty: 1, rate: 0.0, discount: 0.0 });
+    purchaseRows.push({ part_no: '', description: '', hsn: '', location: '', gst: 18.0, qty: 1, rate: 0.0, discount: 0.0 });
     renderPurchaseRows();
 }
 
@@ -1573,6 +1585,7 @@ function renderPurchaseRows() {
                         purchaseRows[${i}].description = d.description;
                         purchaseRows[${i}].rate = d.rate;
                         purchaseRows[${i}].hsn = d.hsn;
+                        if (d.location) purchaseRows[${i}].location = d.location;
                         fetchPurchasePartDetails(${i});
                     })"
                     onblur="purchaseRows[${i}].part_no = this.value.trim().toUpperCase(); this.value = purchaseRows[${i}].part_no; if(purchaseRows[${i}].part_no) fetchPurchasePartDetails(${i});"
@@ -1588,6 +1601,11 @@ function renderPurchaseRows() {
                 <input type="text" value="${r.hsn}"
                     onchange="purchaseRows[${i}].hsn = this.value; renderPurchaseRows();"
                     class="q-table-input" placeholder="HSN" style="width:100px;">
+            </td>
+            <td>
+                <input type="text" value="${r.location || ''}"
+                    onchange="purchaseRows[${i}].location = this.value; renderPurchaseRows();"
+                    class="q-table-input" placeholder="e.g. Rack A-1" style="width:110px;">
             </td>
             <td>
                 <input type="number" value="${r.gst}" min="0" max="100"
@@ -1628,6 +1646,7 @@ async function fetchPurchasePartDetails(i) {
         if (data.description) purchaseRows[i].description = data.description;
         if (data.rate && data.rate > 0) purchaseRows[i].rate = data.rate;
         if (data.hsn) purchaseRows[i].hsn = data.hsn;
+        if (data.location) purchaseRows[i].location = data.location;
         
         // Auto-fill vendor details at the top if they are empty
         const vNameInput = document.getElementById('purchase-vendor-name');
@@ -1664,6 +1683,7 @@ async function saveStockPurchase() {
             part_no: r.part_no,
             description: r.description,
             hsn: r.hsn,
+            location: r.location || '',
             gst: r.gst,
             qty: r.qty,
             rate: r.rate,
@@ -1700,6 +1720,46 @@ function focusAddStockForm() {
             vendorInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
         }
     }, 150);
+}
+
+function exportStockExcel() {
+    const q = (document.getElementById('search')?.value || '').trim();
+    window.open(`/export_stock_excel?q=${encodeURIComponent(q)}`);
+}
+
+async function editLocation(productId, currentLoc) {
+    const newLoc = prompt("Enter Store Location (e.g. Rack A-1, Shelf 3, Bin 12):", currentLoc || "");
+    if (newLoc === null) return;
+    
+    try {
+        const res = await fetch(`/update_location/${productId}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ location: newLoc })
+        });
+        const data = await res.json();
+        if (data.ok) {
+            const textEl = document.getElementById(`loc-text-${productId}`);
+            const badgeEl = document.getElementById(`loc-badge-${productId}`);
+            if (textEl && badgeEl) {
+                if (data.location) {
+                    textEl.textContent = data.location;
+                    badgeEl.style.background = '#eff6ff';
+                    badgeEl.style.color = '#1d4ed8';
+                    badgeEl.style.borderColor = '#bfdbfe';
+                } else {
+                    textEl.textContent = '+ Set Loc';
+                    badgeEl.style.background = '#f1f5f9';
+                    badgeEl.style.color = '#64748b';
+                    badgeEl.style.borderColor = '#cbd5e1';
+                }
+            }
+        } else {
+            alert('Error updating location: ' + (data.error || 'Unknown error'));
+        }
+    } catch (e) {
+        alert('Network error: ' + e);
+    }
 }
 
 // Initialize the first row

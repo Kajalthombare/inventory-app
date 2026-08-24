@@ -11,7 +11,7 @@ from datetime import datetime
 from fastapi.responses import FileResponse
 import pdfkit
 from openpyxl import Workbook
-from openpyxl.styles import Font, Alignment, Border, Side
+from openpyxl.styles import Font, Alignment, Border, Side, PatternFill
 
 from fastapi.responses import HTMLResponse
 from database import Base 
@@ -63,13 +63,14 @@ def auto_import_inventory():
         except Exception:
             db.rollback()
 
-        # Add vendor details to products table
+        # Add vendor details & location to products table
         for col, col_type in [
             ("vendor_name", "VARCHAR(255)"),
             ("vendor_address", "VARCHAR(255)"),
             ("vendor_mobile", "VARCHAR(50)"),
             ("vendor_gstin", "VARCHAR(50)"),
-            ("vendor_email", "VARCHAR(255)")
+            ("vendor_email", "VARCHAR(255)"),
+            ("location", "VARCHAR(100)")
         ]:
             try:
                 db.execute(_text(f"ALTER TABLE products ADD COLUMN {col} {col_type}"))
@@ -90,16 +91,18 @@ def auto_import_inventory():
                     rate     = float(row.get("Rate", 0) or 0)
                     discount = float(row.get("Discount", 0) or 0)
                     amount   = ((qty * rate) - (qty * rate * discount / 100)) if qty > 0 else 0.0
+                    loc = str(row.get("Location", row.get("location", "")) or "").strip()
                     db.execute(_text("""
-                        INSERT INTO products (part_no, description, hsn, gst, quantity, rate, discount, amount)
-                        VALUES (:pn, :desc, :hsn, :gst, :qty, :rate, :disc, :amt)
+                        INSERT INTO products (part_no, description, hsn, gst, quantity, rate, discount, amount, location)
+                        VALUES (:pn, :desc, :hsn, :gst, :qty, :rate, :disc, :amt, :loc)
                     """), {
                         "pn":   str(row.get("Part No", "")).strip(),
                         "desc": str(row.get("Description", "")).strip(),
                         "hsn":  str(row.get("HSN", "")).strip(),
                         "gst":  float(row.get("GST", 18) or 18),
                         "qty":  qty, "rate": rate, "disc": discount,
-                        "amt":  round(amount, 2)
+                        "amt":  round(amount, 2),
+                        "loc":  loc
                     })
                 db.commit()
                 print(f"✅ Auto-imported inventory.xlsx ({len(df)} products)")
@@ -195,6 +198,7 @@ class Product(Base):
     rate = Column(Float)
     discount = Column(Float)
     amount = Column(Float)
+    location = Column(String(100), nullable=True, default="")
     vendor_name = Column(String(255), nullable=True)
     vendor_address = Column(String(255), nullable=True)
     vendor_mobile = Column(String(50), nullable=True)
@@ -375,7 +379,8 @@ def home(request: Request, page: int = 1, q: str = ""):
     if q_clean:
         query = query.filter(
             (func.upper(Product.part_no).like(f"%{q_clean}%")) |
-            (func.upper(Product.description).like(f"%{q_clean}%"))
+            (func.upper(Product.description).like(f"%{q_clean}%")) |
+            (func.upper(Product.location).like(f"%{q_clean}%"))
         )
 
     ordered_query = query.order_by(
@@ -626,6 +631,7 @@ def upload_stock(file: UploadFile = File(...), mode: str = Form("append")):
             vendor_mobile = str(row.get("VENDOR MOBILE", row.get("MOBILE", ""))).strip()
             vendor_gstin = str(row.get("VENDOR GSTIN", row.get("GSTIN", ""))).strip()
             vendor_email = str(row.get("VENDOR EMAIL", row.get("EMAIL", ""))).strip()
+            location = str(row.get("LOCATION", row.get("STORE LOCATION", row.get("RACK", row.get("SHELF", row.get("BIN", row.get("PLACE", ""))))))).strip()
 
             amount = (qty * rate) - ((qty * rate) * (discount / 100)) if qty > 0 else 0.0
 
@@ -640,6 +646,8 @@ def upload_stock(file: UploadFile = File(...), mode: str = Form("append")):
                 if discount > 0:
                     existing.discount = discount
                 existing.amount = (existing.quantity * existing.rate) - ((existing.quantity * existing.rate) * (existing.discount / 100))
+                if location:
+                    existing.location = location
                 if vendor_name:
                     existing.vendor_name = vendor_name
                 if vendor_address:
@@ -660,6 +668,7 @@ def upload_stock(file: UploadFile = File(...), mode: str = Form("append")):
                     rate=rate,
                     discount=discount,
                     amount=round(amount, 2),
+                    location=location,
                     vendor_name=vendor_name,
                     vendor_address=vendor_address,
                     vendor_mobile=vendor_mobile,
@@ -677,6 +686,167 @@ def upload_stock(file: UploadFile = File(...), mode: str = Form("append")):
         return {"error": str(e)}, 500
     finally:
         db.close()
+
+
+@app.post("/update_location/{product_id}")
+async def update_product_location(product_id: int, request: Request):
+    data = await request.json()
+    new_location = str(data.get("location", "")).strip()
+    db = SessionLocal()
+    try:
+        product = db.query(Product).filter(Product.id == product_id).first()
+        if not product:
+            return {"error": "Product not found"}
+        product.location = new_location
+        db.commit()
+        return {"ok": True, "location": new_location}
+    except Exception as e:
+        db.rollback()
+        return {"error": str(e)}
+    finally:
+        db.close()
+
+
+@app.get("/export_stock_excel")
+def export_stock_excel(q: str = Query("")):
+    db = SessionLocal()
+    try:
+        from sqlalchemy import func
+        q_clean = q.strip().upper()
+        query = db.query(Product)
+        if q_clean:
+            query = query.filter(
+                (func.upper(Product.part_no).like(f"%{q_clean}%")) |
+                (func.upper(Product.description).like(f"%{q_clean}%")) |
+                (func.upper(Product.location).like(f"%{q_clean}%"))
+            )
+        
+        products = query.order_by(Product.part_no.asc()).all()
+
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "Stock Inventory"
+
+        # Enable grid lines
+        ws.views.sheetView[0].showGridLines = True
+
+        # Header style
+        header_font = Font(name="Calibri", size=11, bold=True, color="FFFFFF")
+        header_fill = PatternFill(start_color="1E293B", end_color="1E293B", fill_type="solid")
+        header_align = Alignment(horizontal="center", vertical="center", wrap_text=True)
+
+        headers = [
+            "Part No", "Description", "HSN", "GST %", 
+            "Quantity", "Stock Status", "Purchase Rate (₹)", 
+            "Discount %", "Taxable Amount (₹)", "Store Location", "Vendor Name"
+        ]
+        
+        ws.append(headers)
+        
+        for col_num in range(1, len(headers) + 1):
+            cell = ws.cell(row=1, column=col_num)
+            cell.font = header_font
+            cell.fill = header_fill
+            cell.alignment = header_align
+
+        total_qty = 0
+        total_value = 0.0
+        in_stock_count = 0
+        out_stock_count = 0
+
+        data_row_border = Border(
+            left=Side(style='thin', color='E2E8F0'),
+            right=Side(style='thin', color='E2E8F0'),
+            top=Side(style='thin', color='E2E8F0'),
+            bottom=Side(style='thin', color='E2E8F0')
+        )
+
+        for p in products:
+            qty = int(p.quantity or 0)
+            rate = float(p.rate or 0.0)
+            discount = float(p.discount or 0.0)
+            amt = float(p.amount or 0.0)
+            if qty <= 0:
+                amt = 0.0
+                status = "Out of Stock"
+                out_stock_count += 1
+            elif qty < 5:
+                status = "Low Stock"
+                in_stock_count += 1
+                total_qty += qty
+                total_value += amt
+            else:
+                status = "In Stock"
+                in_stock_count += 1
+                total_qty += qty
+                total_value += amt
+
+            row_data = [
+                p.part_no or "",
+                p.description or "",
+                p.hsn or "",
+                f"{p.gst or 18}%",
+                qty,
+                status,
+                round(rate, 2),
+                f"{discount}%",
+                round(amt, 2),
+                p.location or "Unassigned",
+                p.vendor_name or ""
+            ]
+            ws.append(row_data)
+
+            r_idx = ws.max_row
+            ws.cell(row=r_idx, column=1).alignment = Alignment(horizontal="left")
+            ws.cell(row=r_idx, column=2).alignment = Alignment(horizontal="left")
+            ws.cell(row=r_idx, column=3).alignment = Alignment(horizontal="center")
+            ws.cell(row=r_idx, column=4).alignment = Alignment(horizontal="center")
+            ws.cell(row=r_idx, column=5).alignment = Alignment(horizontal="right")
+            ws.cell(row=r_idx, column=6).alignment = Alignment(horizontal="center")
+            ws.cell(row=r_idx, column=7).alignment = Alignment(horizontal="right")
+            ws.cell(row=r_idx, column=8).alignment = Alignment(horizontal="center")
+            ws.cell(row=r_idx, column=9).alignment = Alignment(horizontal="right")
+            ws.cell(row=r_idx, column=10).alignment = Alignment(horizontal="center")
+            ws.cell(row=r_idx, column=11).alignment = Alignment(horizontal="left")
+
+            for col_idx in range(1, 12):
+                ws.cell(row=r_idx, column=col_idx).border = data_row_border
+
+        ws.append([])
+
+        summary_title_font = Font(name="Calibri", size=11, bold=True)
+        ws.append(["Stock Summary"])
+        ws.cell(row=ws.max_row, column=1).font = summary_title_font
+
+        ws.append(["Total Unique Products", len(products)])
+        ws.append(["In Stock Items", in_stock_count])
+        ws.append(["Out of Stock Items", out_stock_count])
+        ws.append(["Total Stock Quantity", total_qty])
+        ws.append(["Total Inventory Valuation (₹)", round(total_value, 2)])
+
+        for col in ws.columns:
+            max_len = 0
+            col_letter = col[0].column_letter
+            for cell in col:
+                val = str(cell.value or '')
+                if len(val) > max_len:
+                    max_len = len(val)
+            ws.column_dimensions[col_letter].width = max(max_len + 3, 12)
+
+        output = io.BytesIO()
+        wb.save(output)
+        output.seek(0)
+
+        filename = "stock_inventory.xlsx" if not q_clean else f"stock_inventory_{q_clean}.xlsx"
+
+        return StreamingResponse(
+            output,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": f"attachment; filename={filename}"}
+        )
+    finally:
+        db.close()
+
 
 
 # ---------------- ADD PRODUCT ----------------
@@ -746,6 +916,7 @@ def add_product(
     quantity: int = Form(...),
     rate: float = Form(...),
     discount: float = Form(0),
+    location: str = Form(None),
     vendor_name: str = Form(None),
     vendor_address: str = Form(None),
     vendor_mobile: str = Form(None),
@@ -819,7 +990,9 @@ def add_product(
                 (existing.quantity * existing.rate) * (existing.discount / 100)
             )
 
-        # Update vendor details
+        # Update vendor details and location
+        if location and location.strip():
+            existing.location = location.strip()
         if vendor_name and vendor_name.strip():
             existing.vendor_name = vendor_name.strip()
             existing.vendor_address = vendor_address.strip() if vendor_address else ""
@@ -845,6 +1018,7 @@ def add_product(
             rate=rate,
             discount=discount,
             amount=amount,
+            location=location.strip() if (location and location.strip()) else "",
             vendor_name=vendor_name.strip() if (vendor_name and vendor_name.strip()) else "",
             vendor_address=vendor_address.strip() if vendor_address else "",
             vendor_mobile=vendor_mobile.strip() if vendor_mobile else "",
@@ -933,6 +1107,7 @@ async def add_purchase_bill(request: Request):
             
         # Update or Create Product Stock
         existing = db.query(Product).filter(Product.part_no == part_no).first()
+        item_loc = str(item.get("location", "") or "").strip()
         if existing:
             existing.quantity += qty
             if rate > 0:
@@ -943,6 +1118,8 @@ async def add_purchase_bill(request: Request):
                 existing.hsn = hsn
             existing.gst = gst
             existing.discount = discount
+            if item_loc:
+                existing.location = item_loc
             
             # Recalculate amount
             if existing.quantity <= 0:
@@ -976,6 +1153,7 @@ async def add_purchase_bill(request: Request):
                 rate=rate,
                 discount=discount,
                 amount=round(amount, 2),
+                location=item_loc,
                 vendor_name=vendor_name,
                 vendor_address=vendor_address,
                 vendor_mobile=vendor_mobile,
@@ -1011,6 +1189,7 @@ def get_price(part_no: str):
         "rate": rate,
         "hsn": hsn,
         "description": description,
+        "location": prod.location if (prod and prod.location) else "",
         "vendor_name": prod.vendor_name if prod else "",
         "vendor_address": prod.vendor_address if prod else "",
         "vendor_mobile": prod.vendor_mobile if prod else "",

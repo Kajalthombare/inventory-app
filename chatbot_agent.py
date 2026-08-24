@@ -35,16 +35,16 @@ def get_inventory_stats():
         db.close()
 
 def search_products(query: str):
-    """Search for products in the inventory using a search query (matches part number or description).
-    Returns up to 10 matching products.
+    """Search for products in the inventory using a search query (matches part number, description, or store location).
+    Returns up to 10 matching products with location information.
     """
     db = SessionLocal()
     try:
         q_clean = f"%{query.strip().upper()}%"
         sql = """
-            SELECT part_no, description, hsn, gst, quantity, rate, discount, amount, vendor_name 
+            SELECT part_no, description, hsn, gst, quantity, rate, discount, amount, vendor_name, location 
             FROM products 
-            WHERE UPPER(part_no) LIKE :q OR UPPER(description) LIKE :q 
+            WHERE UPPER(part_no) LIKE :q OR UPPER(description) LIKE :q OR UPPER(location) LIKE :q 
             LIMIT 10
         """
         rows = db.execute(text(sql), {"q": q_clean}).fetchall()
@@ -59,7 +59,8 @@ def search_products(query: str):
                 "rate": r[5],
                 "discount_percent": r[6],
                 "amount": r[7],
-                "vendor_name": r[8]
+                "vendor_name": r[8],
+                "store_location": r[9] or "Unassigned"
             })
         return result
     except Exception as e:
@@ -69,13 +70,13 @@ def search_products(query: str):
 
 def get_product_details(part_no: str):
     """Retrieve detailed information for a specific product using its unique part number.
-    Returns details including quantity, rate, discount, vendor details.
+    Returns details including quantity, rate, discount, vendor details, and store location.
     """
     db = SessionLocal()
     try:
         sql = """
             SELECT part_no, description, hsn, gst, quantity, rate, discount, amount, 
-                   vendor_name, vendor_address, vendor_mobile, vendor_gstin, vendor_email
+                   vendor_name, vendor_address, vendor_mobile, vendor_gstin, vendor_email, location
             FROM products 
             WHERE UPPER(part_no) = :p
         """
@@ -95,7 +96,8 @@ def get_product_details(part_no: str):
             "vendor_address": r[9],
             "vendor_mobile": r[10],
             "vendor_gstin": r[11],
-            "vendor_email": r[12]
+            "vendor_email": r[12],
+            "store_location": r[13] or "Unassigned"
         }
     except Exception as e:
         return {"error": str(e)}
@@ -108,7 +110,7 @@ def get_low_stock_products(threshold: int = 5):
     db = SessionLocal()
     try:
         sql = """
-            SELECT part_no, description, quantity, rate, vendor_name 
+            SELECT part_no, description, quantity, rate, vendor_name, location 
             FROM products 
             WHERE quantity <= :t 
             ORDER BY quantity ASC 
@@ -122,7 +124,8 @@ def get_low_stock_products(threshold: int = 5):
                 "description": r[1],
                 "quantity": r[2],
                 "rate": r[3],
-                "vendor_name": r[4]
+                "vendor_name": r[4],
+                "store_location": r[5] or "Unassigned"
             })
         return result
     except Exception as e:
