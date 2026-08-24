@@ -42,16 +42,24 @@ STORES = {
 }
 
 def get_active_store(request: Request) -> str:
-    store = request.session.get("active_store", "mahindra")
+    store = request.session.get("active_store")
     if store not in STORES:
-        store = "mahindra"
+        return ""
     return store
+
+@app.get("/select_store", response_class=HTMLResponse)
+def select_store_page(request: Request):
+    if not request.session.get("user"):
+        return RedirectResponse("/login", status_code=302)
+    active_store = request.session.get("active_store", "")
+    return render("select_store.html", stores=STORES, active_store=active_store)
 
 @app.get("/switch_store/{store_name}")
 def switch_store(store_name: str, request: Request):
     if store_name in STORES:
         request.session["active_store"] = store_name
-    return RedirectResponse("/", status_code=302)
+        return RedirectResponse("/", status_code=302)
+    return RedirectResponse("/select_store", status_code=302)
 
 # ── Auto-import inventory.xlsx on startup if products table is empty ──
 @app.on_event("startup")
@@ -374,6 +382,8 @@ def format_inr(amount):
 @app.get("/login", response_class=HTMLResponse)
 def login_page(request: Request):
     if request.session.get("user"):
+        if not get_active_store(request):
+            return RedirectResponse("/select_store", status_code=302)
         return RedirectResponse("/", status_code=302)
     return render("login.html", error=None)
 
@@ -381,7 +391,7 @@ def login_page(request: Request):
 def login(request: Request, username: str = Form(...), password: str = Form(...)):
     if username == ADMIN_USERNAME and password == ADMIN_PASSWORD:
         request.session["user"] = username
-        return RedirectResponse("/", status_code=303)
+        return RedirectResponse("/select_store", status_code=303)
     return render("login.html", status_code=401, error="Invalid username or password. Please try again.")
 
 @app.get("/logout")
@@ -396,6 +406,9 @@ def home(request: Request, page: int = 1, q: str = ""):
         return RedirectResponse("/login", status_code=302)
 
     active_store = get_active_store(request)
+    if not active_store:
+        return RedirectResponse("/select_store", status_code=302)
+
     store_name_display = STORES.get(active_store, "Mahindra Pro Spares")
 
     db = SessionLocal()
