@@ -9,21 +9,22 @@ api_key = os.environ.get("GEMINI_API_KEY")
 if api_key:
     genai.configure(api_key=api_key)
 
-def get_inventory_stats():
-    """Get overall inventory statistics including total unique products, number of in-stock items,
-    number of out-of-stock items, and total value of the inventory (taxable).
+def get_inventory_stats(store_name: str = "mahindra"):
+    """Get overall inventory statistics for the specified store including total unique products,
+    number of in-stock items, number of out-of-stock items, and total value of inventory (taxable).
     """
     db = SessionLocal()
     try:
-        total_products = db.execute(text("SELECT COUNT(*) FROM products")).scalar() or 0
-        in_stock = db.execute(text("SELECT COUNT(*) FROM products WHERE quantity > 0")).scalar() or 0
-        out_of_stock = db.execute(text("SELECT COUNT(*) FROM products WHERE quantity = 0")).scalar() or 0
+        total_products = db.execute(text("SELECT COUNT(*) FROM products WHERE store = :store"), {"store": store_name}).scalar() or 0
+        in_stock = db.execute(text("SELECT COUNT(*) FROM products WHERE store = :store AND quantity > 0"), {"store": store_name}).scalar() or 0
+        out_of_stock = db.execute(text("SELECT COUNT(*) FROM products WHERE store = :store AND quantity = 0"), {"store": store_name}).scalar() or 0
         
         # Calculate total value in SQL
-        rows = db.execute(text("SELECT quantity, rate, discount FROM products WHERE quantity > 0")).fetchall()
+        rows = db.execute(text("SELECT quantity, rate, discount FROM products WHERE store = :store AND quantity > 0"), {"store": store_name}).fetchall()
         total_value = sum((r[0] * r[1]) - ((r[0] * r[1]) * (r[2] / 100)) for r in rows)
         
         return {
+            "store_id": store_name,
             "total_unique_products": total_products,
             "in_stock_products": in_stock,
             "out_of_stock_products": out_of_stock,
@@ -34,8 +35,8 @@ def get_inventory_stats():
     finally:
         db.close()
 
-def search_products(query: str):
-    """Search for products in the inventory using a search query (matches part number, description, or store location).
+def search_products(query: str, store_name: str = "mahindra"):
+    """Search for products in the specified store using a search query (matches part number, description, or store location).
     Returns up to 10 matching products with location information.
     """
     db = SessionLocal()
@@ -44,10 +45,10 @@ def search_products(query: str):
         sql = """
             SELECT part_no, description, hsn, gst, quantity, rate, discount, amount, vendor_name, location 
             FROM products 
-            WHERE UPPER(part_no) LIKE :q OR UPPER(description) LIKE :q OR UPPER(location) LIKE :q 
+            WHERE store = :store AND (UPPER(part_no) LIKE :q OR UPPER(description) LIKE :q OR UPPER(location) LIKE :q)
             LIMIT 10
         """
-        rows = db.execute(text(sql), {"q": q_clean}).fetchall()
+        rows = db.execute(text(sql), {"q": q_clean, "store": store_name}).fetchall()
         result = []
         for r in rows:
             result.append({
@@ -68,8 +69,8 @@ def search_products(query: str):
     finally:
         db.close()
 
-def get_product_details(part_no: str):
-    """Retrieve detailed information for a specific product using its unique part number.
+def get_product_details(part_no: str, store_name: str = "mahindra"):
+    """Retrieve detailed information for a specific product in the specified store using its unique part number.
     Returns details including quantity, rate, discount, vendor details, and store location.
     """
     db = SessionLocal()
@@ -78,11 +79,11 @@ def get_product_details(part_no: str):
             SELECT part_no, description, hsn, gst, quantity, rate, discount, amount, 
                    vendor_name, vendor_address, vendor_mobile, vendor_gstin, vendor_email, location
             FROM products 
-            WHERE UPPER(part_no) = :p
+            WHERE store = :store AND UPPER(part_no) = :p
         """
-        r = db.execute(text(sql), {"p": part_no.strip().upper()}).fetchone()
+        r = db.execute(text(sql), {"p": part_no.strip().upper(), "store": store_name}).fetchone()
         if not r:
-            return {"error": f"Product with part number '{part_no}' not found."}
+            return {"error": f"Product with part number '{part_no}' not found in store '{store_name}'."}
         return {
             "part_no": r[0],
             "description": r[1],
@@ -104,19 +105,19 @@ def get_product_details(part_no: str):
     finally:
         db.close()
 
-def get_low_stock_products(threshold: int = 5):
-    """List products whose stock quantity is less than or equal to the threshold (default 5).
+def get_low_stock_products(threshold: int = 5, store_name: str = "mahindra"):
+    """List products in the specified store whose stock quantity is less than or equal to the threshold (default 5).
     """
     db = SessionLocal()
     try:
         sql = """
             SELECT part_no, description, quantity, rate, vendor_name, location 
             FROM products 
-            WHERE quantity <= :t 
+            WHERE store = :store AND quantity <= :t 
             ORDER BY quantity ASC 
             LIMIT 20
         """
-        rows = db.execute(text(sql), {"t": threshold}).fetchall()
+        rows = db.execute(text(sql), {"t": threshold, "store": store_name}).fetchall()
         result = []
         for r in rows:
             result.append({
@@ -133,8 +134,8 @@ def get_low_stock_products(threshold: int = 5):
     finally:
         db.close()
 
-def get_sales_report(start_date: str, end_date: str, customer_name: str = None, vendor_name: str = None):
-    """Retrieve sales statistics and detailed transactions between start_date and end_date (YYYY-MM-DD).
+def get_sales_report(start_date: str, end_date: str, customer_name: str = None, vendor_name: str = None, store_name: str = "mahindra"):
+    """Retrieve sales statistics and detailed transactions for specified store between start_date and end_date (YYYY-MM-DD).
     Optionally filter by customer_name or vendor_name.
     """
     db = SessionLocal()
@@ -142,10 +143,10 @@ def get_sales_report(start_date: str, end_date: str, customer_name: str = None, 
         sql_parts = [
             "FROM invoice_items ii",
             "JOIN invoices i ON ii.invoice_id = i.id",
-            "LEFT JOIN products p ON ii.part_no = p.part_no",
-            "WHERE DATE(i.date) BETWEEN :start AND :end"
+            "LEFT JOIN products p ON (ii.part_no = p.part_no AND p.store = :store)",
+            "WHERE i.store = :store AND DATE(i.date) BETWEEN :start AND :end"
         ]
-        params = {"start": start_date, "end": end_date}
+        params = {"start": start_date, "end": end_date, "store": store_name}
         
         if customer_name:
             sql_parts.append("AND LOWER(i.customer_name) LIKE LOWER(:customer)")
@@ -225,8 +226,8 @@ def get_sales_report(start_date: str, end_date: str, customer_name: str = None, 
     finally:
         db.close()
 
-def get_purchase_report(start_date: str, end_date: str, vendor_name: str = None):
-    """Retrieve purchase statistics and detailed transactions between start_date and end_date (YYYY-MM-DD).
+def get_purchase_report(start_date: str, end_date: str, vendor_name: str = None, store_name: str = "mahindra"):
+    """Retrieve purchase statistics and detailed transactions for specified store between start_date and end_date (YYYY-MM-DD).
     Optionally filter by vendor_name.
     """
     db = SessionLocal()
@@ -234,9 +235,9 @@ def get_purchase_report(start_date: str, end_date: str, vendor_name: str = None)
         sql = """
             SELECT id, vendor_name, part_no, description, quantity, rate, discount, amount, date 
             FROM purchases 
-            WHERE DATE(date) BETWEEN :start AND :end
+            WHERE store = :store AND DATE(date) BETWEEN :start AND :end
         """
-        params = {"start": start_date, "end": end_date}
+        params = {"start": start_date, "end": end_date, "store": store_name}
         if vendor_name:
             sql += " AND LOWER(vendor_name) LIKE LOWER(:vendor)"
             params["vendor"] = f"%{vendor_name.strip()}%"
@@ -270,19 +271,19 @@ def get_purchase_report(start_date: str, end_date: str, vendor_name: str = None)
     finally:
         db.close()
 
-def get_vendors():
-    """Retrieve a list of all unique vendor names in the system.
+def get_vendors(store_name: str = "mahindra"):
+    """Retrieve a list of all unique vendor names in the specified store.
     """
     db = SessionLocal()
     try:
-        rows = db.execute(text("SELECT DISTINCT name FROM vendors ORDER BY name")).fetchall()
+        rows = db.execute(text("SELECT DISTINCT name FROM vendors WHERE store = :store ORDER BY name"), {"store": store_name}).fetchall()
         return [r[0] for r in rows if r[0]]
     except Exception as e:
         return {"error": str(e)}
     finally:
         db.close()
 
-def query_chatbot(message: str, history: list = None):
+def query_chatbot(message: str, history: list = None, store_name: str = "mahindra"):
     """Start/continue a chat with Google Gemini and automatic tool calls to solve inventory user query.
     """
     api_key = os.environ.get("GEMINI_API_KEY")
@@ -296,27 +297,47 @@ def query_chatbot(message: str, history: list = None):
     try:
         genai.configure(api_key=api_key)
         
+        # Bind store_name parameter to tool wrappers
         tools = [
-            get_inventory_stats,
-            search_products,
-            get_product_details,
-            get_low_stock_products,
-            get_sales_report,
-            get_purchase_report,
-            get_vendors
+            lambda: get_inventory_stats(store_name=store_name),
+            lambda query: search_products(query, store_name=store_name),
+            lambda part_no: get_product_details(part_no, store_name=store_name),
+            lambda threshold=5: get_low_stock_products(threshold, store_name=store_name),
+            lambda start_date, end_date, customer_name=None, vendor_name=None: get_sales_report(start_date, end_date, customer_name, vendor_name, store_name=store_name),
+            lambda start_date, end_date, vendor_name=None: get_purchase_report(start_date, end_date, vendor_name, store_name=store_name),
+            lambda: get_vendors(store_name=store_name)
         ]
         
+        # Set proper function names for docstring inspection
+        tools[0].__name__ = "get_inventory_stats"
+        tools[0].__doc__ = get_inventory_stats.__doc__
+        tools[1].__name__ = "search_products"
+        tools[1].__doc__ = search_products.__doc__
+        tools[2].__name__ = "get_product_details"
+        tools[2].__doc__ = get_product_details.__doc__
+        tools[3].__name__ = "get_low_stock_products"
+        tools[3].__doc__ = get_low_stock_products.__doc__
+        tools[4].__name__ = "get_sales_report"
+        tools[4].__doc__ = get_sales_report.__doc__
+        tools[5].__name__ = "get_purchase_report"
+        tools[5].__doc__ = get_purchase_report.__doc__
+        tools[6].__name__ = "get_vendors"
+        tools[6].__doc__ = get_vendors.__doc__
+
+        store_title = "Mahindra Pro Spares" if store_name == "mahindra" else "Divya Automobiles"
+
         model = genai.GenerativeModel(
             model_name='gemini-2.5-flash',
             tools=tools,
             system_instruction=(
-                "You are InvenPro Assistant, an intelligent chatbot integrated into the InvenPro Inventory Management System. "
-                "You help warehouse administrators manage and analyze inventory, stock, sales, and purchases. "
-                "You have access to database tools that retrieve live inventory and sales data. "
-                "Always call the appropriate tool when the user asks for stock statistics, product lookups, low stock, sales reports, or purchase reports. "
-                "If the tool returns an error, explain it politely. "
-                "Format numbers nicely in INR (e.g. ₹ 12,34,567.89 or using the Indian currency system when appropriate). "
-                "Be brief, precise, helpful, and polite. Use markdown tables to present tabular data when helpful."
+                f"You are InvenPro Assistant, an intelligent chatbot integrated into the InvenPro Inventory Management System. "
+                f"You are currently assisting for the store: '{store_title}'. "
+                f"You help warehouse administrators manage and analyze inventory, stock, sales, and purchases for '{store_title}'. "
+                f"You have access to database tools that retrieve live inventory and sales data for '{store_title}'. "
+                f"Always call the appropriate tool when the user asks for stock statistics, product lookups, low stock, sales reports, or purchase reports. "
+                f"If the tool returns an error or no data, explain it politely. "
+                f"Format numbers nicely in INR (e.g. ₹ 12,34,567.89 or using the Indian currency system when appropriate). "
+                f"Be brief, precise, helpful, and polite. Use markdown tables to present tabular data when helpful."
             )
         )
         

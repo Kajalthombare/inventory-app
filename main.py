@@ -35,6 +35,24 @@ app.add_middleware(SessionMiddleware, secret_key="inventory-secret-key-2026")
 ADMIN_USERNAME = "admin"
 ADMIN_PASSWORD = "admin123"
 
+# ── Stores configuration ──
+STORES = {
+    "mahindra": "Mahindra Pro Spares",
+    "divya": "Divya Automobiles"
+}
+
+def get_active_store(request: Request) -> str:
+    store = request.session.get("active_store", "mahindra")
+    if store not in STORES:
+        store = "mahindra"
+    return store
+
+@app.get("/switch_store/{store_name}")
+def switch_store(store_name: str, request: Request):
+    if store_name in STORES:
+        request.session["active_store"] = store_name
+    return RedirectResponse("/", status_code=302)
+
 # ── Auto-import inventory.xlsx on startup if products table is empty ──
 @app.on_event("startup")
 def auto_import_inventory():
@@ -63,7 +81,19 @@ def auto_import_inventory():
         except Exception:
             db.rollback()
 
-        # Add vendor details & location to products table
+        # Add vendor details, location, and store column to products table & others
+        for tbl in ["products", "invoices", "quotations", "purchases", "order_items", "vendors"]:
+            try:
+                db.execute(_text(f"ALTER TABLE {tbl} ADD COLUMN store VARCHAR(50) DEFAULT 'mahindra'"))
+                db.commit()
+            except Exception:
+                db.rollback()
+            try:
+                db.execute(_text(f"UPDATE {tbl} SET store = 'mahindra' WHERE store IS NULL OR store = ''"))
+                db.commit()
+            except Exception:
+                db.rollback()
+
         for col, col_type in [
             ("vendor_name", "VARCHAR(255)"),
             ("vendor_address", "VARCHAR(255)"),
@@ -93,8 +123,8 @@ def auto_import_inventory():
                     amount   = ((qty * rate) - (qty * rate * discount / 100)) if qty > 0 else 0.0
                     loc = str(row.get("Location", row.get("location", "")) or "").strip()
                     db.execute(_text("""
-                        INSERT INTO products (part_no, description, hsn, gst, quantity, rate, discount, amount, location)
-                        VALUES (:pn, :desc, :hsn, :gst, :qty, :rate, :disc, :amt, :loc)
+                        INSERT INTO products (part_no, description, hsn, gst, quantity, rate, discount, amount, location, store)
+                        VALUES (:pn, :desc, :hsn, :gst, :qty, :rate, :disc, :amt, :loc, 'mahindra')
                     """), {
                         "pn":   str(row.get("Part No", "")).strip(),
                         "desc": str(row.get("Description", "")).strip(),
@@ -135,12 +165,12 @@ def auto_import_inventory():
                         params = {}
                         values_clauses = []
                         for i, item in enumerate(batch):
-                            values_clauses.append(f"(:pn_{i}, :desc_{i}, :hsn_{i}, :mrp_{i})")
+                            values_clauses.append(f"(:pn_{i}, :desc_{i}, :hsn_{i}, :mrp_{i}, 'mahindra')")
                             params[f"pn_{i}"] = item["pn"]
                             params[f"desc_{i}"] = item["desc"]
                             params[f"hsn_{i}"] = item["hsn"]
                             params[f"mrp_{i}"] = item["mrp"]
-                        sql = f"INSERT INTO order_items (part_no, description, hsn, mrp) VALUES {', '.join(values_clauses)}"
+                        sql = f"INSERT INTO order_items (part_no, description, hsn, mrp, store) VALUES {', '.join(values_clauses)}"
                         db.execute(_text(sql), params)
                         db.commit()
                         batch = []
@@ -148,12 +178,12 @@ def auto_import_inventory():
                     params = {}
                     values_clauses = []
                     for i, item in enumerate(batch):
-                        values_clauses.append(f"(:pn_{i}, :desc_{i}, :hsn_{i}, :mrp_{i})")
+                        values_clauses.append(f"(:pn_{i}, :desc_{i}, :hsn_{i}, :mrp_{i}, 'mahindra')")
                         params[f"pn_{i}"] = item["pn"]
                         params[f"desc_{i}"] = item["desc"]
                         params[f"hsn_{i}"] = item["hsn"]
                         params[f"mrp_{i}"] = item["mrp"]
-                    sql = f"INSERT INTO order_items (part_no, description, hsn, mrp) VALUES {', '.join(values_clauses)}"
+                    sql = f"INSERT INTO order_items (part_no, description, hsn, mrp, store) VALUES {', '.join(values_clauses)}"
                     db.execute(_text(sql), params)
                     db.commit()
                 print(f"✅ Synced orders.csv ({csv_count} products into order_items)")
@@ -199,6 +229,7 @@ class Product(Base):
     discount = Column(Float)
     amount = Column(Float)
     location = Column(String(100), nullable=True, default="")
+    store = Column(String(50), default="mahindra", index=True)
     vendor_name = Column(String(255), nullable=True)
     vendor_address = Column(String(255), nullable=True)
     vendor_mobile = Column(String(50), nullable=True)
@@ -216,6 +247,7 @@ class Invoice(Base):
     customer_mobile = Column(String(50), nullable=True)
     customer_email = Column(String(255), nullable=True)
     date = Column(DateTime, default=datetime.utcnow)
+    store = Column(String(50), default="mahindra", index=True)
 
     total_amount = Column(Float)
     gst_amount = Column(Float)
@@ -238,15 +270,6 @@ class InvoiceItem(Base):
     hsn = Column(String(50))
     purchase_rate = Column(Float, default=0.0)
 
-# class OrderItems(Base):
-#     __tablename__ = "order_items"
-
-#     id = Column(Integer, primary_key=True)
-#     part_no = Column(String(100))
-#     description = Column(String(255))
-#     rate = Column(Float)
-#     hsn = Column(String(50))
-
 class OrderItems(Base):
     __tablename__ = "order_items"
 
@@ -255,6 +278,7 @@ class OrderItems(Base):
     description = Column(String(255))
     hsn = Column(String(50))
     mrp = Column(Float)
+    store = Column(String(50), default="mahindra", index=True)
 
 class Quotation(Base):
     __tablename__ = "quotations"
@@ -268,6 +292,7 @@ class Quotation(Base):
     date = Column(DateTime, default=datetime.utcnow)
     total_amount = Column(Float, default=0.0)
     grand_total = Column(Float, default=0.0)
+    store = Column(String(50), default="mahindra", index=True)
 
 class QuotationItem(Base):
     __tablename__ = "quotation_items"
@@ -284,11 +309,12 @@ class QuotationItem(Base):
 class Vendor(Base):
     __tablename__ = "vendors"
     id = Column(Integer, primary_key=True)
-    name = Column(String(255), unique=True)
+    name = Column(String(255))
     address = Column(String(255), nullable=True)
     mobile_num = Column(String(50), nullable=True)
     gstin = Column(String(50), nullable=True)
     email_id = Column(String(255), nullable=True)
+    store = Column(String(50), default="mahindra", index=True)
 
 class Purchase(Base):
     __tablename__ = "purchases"
@@ -302,6 +328,7 @@ class Purchase(Base):
     discount = Column(Float)
     amount = Column(Float)
     date = Column(DateTime, default=datetime.utcnow)
+    store = Column(String(50), default="mahindra", index=True)
 
 Base.metadata.create_all(bind=engine)
 
@@ -368,6 +395,9 @@ def home(request: Request, page: int = 1, q: str = ""):
     if not request.session.get("user"):
         return RedirectResponse("/login", status_code=302)
 
+    active_store = get_active_store(request)
+    store_name_display = STORES.get(active_store, "Mahindra Pro Spares")
+
     db = SessionLocal()
     from sqlalchemy import func
 
@@ -375,7 +405,7 @@ def home(request: Request, page: int = 1, q: str = ""):
     offset = (page - 1) * per_page
     q_clean = q.strip().upper()
 
-    query = db.query(Product)
+    query = db.query(Product).filter(Product.store == active_store)
     if q_clean:
         query = query.filter(
             (func.upper(Product.part_no).like(f"%{q_clean}%")) |
@@ -394,17 +424,17 @@ def home(request: Request, page: int = 1, q: str = ""):
     total_items = ordered_query.count()
     products = ordered_query.offset(offset).limit(per_page).all()
 
-    # Total value of all stock in DB
-    total_value_query = db.query(Product).filter(Product.quantity > 0).all()
+    # Total value of all stock in DB for active store
+    total_value_query = db.query(Product).filter(Product.store == active_store, Product.quantity > 0).all()
     total_value = sum(
         (p.quantity * p.rate) - ((p.quantity * p.rate) * (p.discount / 100))
         for p in total_value_query
     )
 
-    # Global stats for dashboard
-    stat_total = db.query(Product).count()
-    stat_instock = db.query(Product).filter(Product.quantity > 0).count()
-    stat_outstock = db.query(Product).filter(Product.quantity == 0).count()
+    # Global stats for active store dashboard
+    stat_total = db.query(Product).filter(Product.store == active_store).count()
+    stat_instock = db.query(Product).filter(Product.store == active_store, Product.quantity > 0).count()
+    stat_outstock = db.query(Product).filter(Product.store == active_store, Product.quantity == 0).count()
 
     total_pages = (total_items + per_page - 1) // per_page
     if total_pages < 1:
@@ -422,7 +452,10 @@ def home(request: Request, page: int = 1, q: str = ""):
         stat_total=stat_total,
         stat_instock=stat_instock,
         stat_outstock=stat_outstock,
-        q=q
+        q=q,
+        active_store=active_store,
+        store_name_display=store_name_display,
+        stores=STORES
     )
 # ---------------- PRICE MASTER UPLOAD ----------------
 
@@ -433,23 +466,26 @@ import io
 
 @app.get("/export_excel")
 def export_excel(
+    request: Request,
     start_date: str,
     end_date: str,
     customer: str = Query(""),
     vendor: str = Query("")
 ):
+    active_store = get_active_store(request)
     db = SessionLocal()
 
     sql_parts = [
         "FROM invoice_items ii",
         "JOIN invoices i ON ii.invoice_id = i.id",
-        "LEFT JOIN products p ON ii.part_no = p.part_no",
-        "WHERE CAST(i.date AS DATE) BETWEEN :start AND :end"
+        "LEFT JOIN products p ON (ii.part_no = p.part_no AND p.store = :store)",
+        "WHERE i.store = :store AND CAST(i.date AS DATE) BETWEEN :start AND :end"
     ]
     
     params = {
         "start": start_date,
-        "end": end_date
+        "end": end_date,
+        "store": active_store
     }
     
     if customer:
@@ -580,7 +616,8 @@ def upload_excel(file: UploadFile = File(...)):
     db.close()
 
 @app.post("/upload_stock")
-def upload_stock(file: UploadFile = File(...), mode: str = Form("append")):
+def upload_stock(request: Request, file: UploadFile = File(...), mode: str = Form("append")):
+    active_store = get_active_store(request)
     db = SessionLocal()
     try:
         # Read Excel or CSV
@@ -594,7 +631,7 @@ def upload_stock(file: UploadFile = File(...), mode: str = Form("append")):
         df = df.fillna("")
 
         if mode == "replace":
-            db.execute(text("DELETE FROM products"))
+            db.execute(text("DELETE FROM products WHERE store = :store"), {"store": active_store})
             db.commit()
 
         imported_count = 0
@@ -637,7 +674,7 @@ def upload_stock(file: UploadFile = File(...), mode: str = Form("append")):
 
             existing = None
             if mode == "append":
-                existing = db.query(Product).filter(Product.part_no == part_no).first()
+                existing = db.query(Product).filter(Product.part_no == part_no, Product.store == active_store).first()
 
             if existing:
                 existing.quantity += qty
@@ -669,6 +706,7 @@ def upload_stock(file: UploadFile = File(...), mode: str = Form("append")):
                     discount=discount,
                     amount=round(amount, 2),
                     location=location,
+                    store=active_store,
                     vendor_name=vendor_name,
                     vendor_address=vendor_address,
                     vendor_mobile=vendor_mobile,
@@ -708,12 +746,13 @@ async def update_product_location(product_id: int, request: Request):
 
 
 @app.get("/export_stock_excel")
-def export_stock_excel(q: str = Query("")):
+def export_stock_excel(request: Request, q: str = Query("")):
+    active_store = get_active_store(request)
     db = SessionLocal()
     try:
         from sqlalchemy import func
         q_clean = q.strip().upper()
-        query = db.query(Product)
+        query = db.query(Product).filter(Product.store == active_store)
         if q_clean:
             query = query.filter(
                 (func.upper(Product.part_no).like(f"%{q_clean}%")) |
@@ -909,6 +948,7 @@ def issue_stock(id: int, qty: int = Form(...)):
     return RedirectResponse("/", status_code=303)
 @app.post("/add")
 def add_product(
+    request: Request,
     part_no: str = Form(...),
     description: str = Form(...),
     hsn: str = Form(...),
@@ -923,18 +963,19 @@ def add_product(
     vendor_gstin: str = Form(None),
     vendor_email: str = Form(None)
 ):
+    active_store = get_active_store(request)
     db = SessionLocal()
 
     # Rate fallback if not provided or 0
     if rate <= 0:
-        price = db.query(OrderItems).filter(OrderItems.part_no == part_no).first()
+        price = db.query(OrderItems).filter(OrderItems.part_no == part_no, OrderItems.store == active_store).first()
         if price and price.mrp > 0:
             rate = price.mrp
 
     # 1. Save or Update Vendor details if vendor_name is provided
     if vendor_name and vendor_name.strip():
         v_name = vendor_name.strip()
-        existing_vendor = db.query(Vendor).filter(Vendor.name == v_name).first()
+        existing_vendor = db.query(Vendor).filter(Vendor.name == v_name, Vendor.store == active_store).first()
         if existing_vendor:
             if vendor_address is not None:
                 existing_vendor.address = vendor_address.strip()
@@ -950,7 +991,8 @@ def add_product(
                 address=vendor_address.strip() if vendor_address else "",
                 mobile_num=vendor_mobile.strip() if vendor_mobile else "",
                 gstin=vendor_gstin.strip() if vendor_gstin else "",
-                email_id=vendor_email.strip() if vendor_email else ""
+                email_id=vendor_email.strip() if vendor_email else "",
+                store=active_store
             )
             db.add(new_vendor)
         db.commit()
@@ -967,12 +1009,13 @@ def add_product(
             rate=rate,
             discount=discount,
             amount=round(purchase_amt, 2),
-            date=datetime.now()
+            date=datetime.now(),
+            store=active_store
         )
         db.add(new_purchase)
 
     # 3. Update stock (existing logic)
-    existing = db.query(Product).filter(Product.part_no == part_no).first()
+    existing = db.query(Product).filter(Product.part_no == part_no, Product.store == active_store).first()
 
     if existing:
         existing.quantity += quantity
@@ -1019,6 +1062,7 @@ def add_product(
             discount=discount,
             amount=amount,
             location=location.strip() if (location and location.strip()) else "",
+            store=active_store,
             vendor_name=vendor_name.strip() if (vendor_name and vendor_name.strip()) else "",
             vendor_address=vendor_address.strip() if vendor_address else "",
             vendor_mobile=vendor_mobile.strip() if vendor_mobile else "",
@@ -1037,6 +1081,7 @@ def add_product(
 
 @app.post("/add_purchase_bill")
 async def add_purchase_bill(request: Request):
+    active_store = get_active_store(request)
     data = await request.json()
     db = SessionLocal()
     
@@ -1053,7 +1098,7 @@ async def add_purchase_bill(request: Request):
         
     # 1. Save or Update Vendor Details
     if vendor_name:
-        existing_vendor = db.query(Vendor).filter(Vendor.name == vendor_name).first()
+        existing_vendor = db.query(Vendor).filter(Vendor.name == vendor_name, Vendor.store == active_store).first()
         if existing_vendor:
             existing_vendor.address = vendor_address
             existing_vendor.mobile_num = vendor_mobile
@@ -1065,7 +1110,8 @@ async def add_purchase_bill(request: Request):
                 address=vendor_address,
                 mobile_num=vendor_mobile,
                 gstin=vendor_gstin,
-                email_id=vendor_email
+                email_id=vendor_email,
+                store=active_store
             )
             db.add(new_vendor)
         db.commit()
@@ -1085,7 +1131,7 @@ async def add_purchase_bill(request: Request):
             
         # Rate fallback if not provided or 0
         if rate <= 0:
-            price = db.query(OrderItems).filter(OrderItems.part_no == part_no).first()
+            price = db.query(OrderItems).filter(OrderItems.part_no == part_no, OrderItems.store == active_store).first()
             if price and price.mrp > 0:
                 rate = price.mrp
                 
@@ -1101,12 +1147,13 @@ async def add_purchase_bill(request: Request):
                 rate=rate,
                 discount=discount,
                 amount=round(purchase_amt, 2),
-                date=datetime.now()
+                date=datetime.now(),
+                store=active_store
             )
             db.add(new_purchase)
             
         # Update or Create Product Stock
-        existing = db.query(Product).filter(Product.part_no == part_no).first()
+        existing = db.query(Product).filter(Product.part_no == part_no, Product.store == active_store).first()
         item_loc = str(item.get("location", "") or "").strip()
         if existing:
             existing.quantity += qty
@@ -1154,6 +1201,7 @@ async def add_purchase_bill(request: Request):
                 discount=discount,
                 amount=round(amount, 2),
                 location=item_loc,
+                store=active_store,
                 vendor_name=vendor_name,
                 vendor_address=vendor_address,
                 vendor_mobile=vendor_mobile,
@@ -1169,14 +1217,16 @@ async def add_purchase_bill(request: Request):
 # ---------------- GET PRICE ----------------
 
 @app.get("/get_price/{part_no}")
-def get_price(part_no: str):
+def get_price(request: Request, part_no: str):
+    active_store = get_active_store(request)
     db = SessionLocal()
 
     # Check products table for existing vendor details and fallback rate
-    prod = db.query(Product).filter(Product.part_no == part_no).first()
+    prod = db.query(Product).filter(Product.part_no == part_no, Product.store == active_store).first()
 
     price = db.query(OrderItems).filter(
-        OrderItems.part_no == part_no
+        OrderItems.part_no == part_no,
+        OrderItems.store == active_store
     ).first()
 
     db.close()
@@ -1240,13 +1290,14 @@ def process_order(file: UploadFile = File(...)):
     db.close()
     return result
 @app.get("/get_rate/{part_no}")
-def get_rate(part_no: str):
+def get_rate(request: Request, part_no: str):
+    active_store = get_active_store(request)
     db = SessionLocal()
 
     # Step 1: Check order_items (price master)
     item = db.execute(
-        text("SELECT mrp, description, hsn FROM order_items WHERE part_no = :p"),
-        {"p": part_no}
+        text("SELECT mrp, description, hsn FROM order_items WHERE part_no = :p AND store = :store"),
+        {"p": part_no, "store": active_store}
     ).fetchone()
 
     rate        = float(item.mrp)   if item and item.mrp         else 0.0
@@ -1255,7 +1306,7 @@ def get_rate(part_no: str):
     stock       = 0
 
     # Step 2: Fallback to products table if rate is 0 or not found
-    product = db.query(Product).filter(Product.part_no == part_no).first()
+    product = db.query(Product).filter(Product.part_no == part_no, Product.store == active_store).first()
     if product:
         stock = int(product.quantity or 0)
         if rate == 0:
@@ -1270,8 +1321,9 @@ def get_rate(part_no: str):
 # ---------------- PRICE MASTER (orders.csv) ----------------
 
 @app.get("/reimport_orders")
-def reimport_orders():
+def reimport_orders(request: Request):
     """Admin: reload all products from orders.csv into order_items"""
+    active_store = get_active_store(request)
     db = SessionLocal()
     try:
         csv_path = os.path.join(os.path.dirname(__file__), "orders.csv")
@@ -1279,7 +1331,7 @@ def reimport_orders():
             return {"error": "orders.csv not found"}
         df = pd.read_csv(csv_path, dtype=str, on_bad_lines="skip")
         df.columns = [col.strip() for col in df.columns]
-        db.execute(text("DELETE FROM order_items"))
+        db.execute(text("DELETE FROM order_items WHERE store = :store"), {"store": active_store})
         batch, inserted = [], 0
         for _, row in df.iterrows():
             part_no = str(row.get("Part No", "") or "").strip()
@@ -1292,29 +1344,29 @@ def reimport_orders():
                 "mrp":  float(row.get("MRP", 0) or 0)
             })
             if len(batch) >= 500:
-                params = {}
+                params = {"store": active_store}
                 values_clauses = []
                 for i, item in enumerate(batch):
-                    values_clauses.append(f"(:pn_{i}, :desc_{i}, :hsn_{i}, :mrp_{i})")
+                    values_clauses.append(f"(:pn_{i}, :desc_{i}, :hsn_{i}, :mrp_{i}, :store)")
                     params[f"pn_{i}"] = item["pn"]
                     params[f"desc_{i}"] = item["desc"]
                     params[f"hsn_{i}"] = item["hsn"]
                     params[f"mrp_{i}"] = item["mrp"]
-                sql = f"INSERT INTO order_items (part_no, description, hsn, mrp) VALUES {', '.join(values_clauses)}"
+                sql = f"INSERT INTO order_items (part_no, description, hsn, mrp, store) VALUES {', '.join(values_clauses)}"
                 db.execute(text(sql), params)
                 db.commit()
                 inserted += len(batch)
                 batch = []
         if batch:
-            params = {}
+            params = {"store": active_store}
             values_clauses = []
             for i, item in enumerate(batch):
-                values_clauses.append(f"(:pn_{i}, :desc_{i}, :hsn_{i}, :mrp_{i})")
+                values_clauses.append(f"(:pn_{i}, :desc_{i}, :hsn_{i}, :mrp_{i}, :store)")
                 params[f"pn_{i}"] = item["pn"]
                 params[f"desc_{i}"] = item["desc"]
                 params[f"hsn_{i}"] = item["hsn"]
                 params[f"mrp_{i}"] = item["mrp"]
-            sql = f"INSERT INTO order_items (part_no, description, hsn, mrp) VALUES {', '.join(values_clauses)}"
+            sql = f"INSERT INTO order_items (part_no, description, hsn, mrp, store) VALUES {', '.join(values_clauses)}"
             db.execute(text(sql), params)
             db.commit()
             inserted += len(batch)
@@ -1325,31 +1377,33 @@ def reimport_orders():
         db.close()
 
 @app.get("/search_parts")
-def search_parts(q: str = ""):
+def search_parts(request: Request, q: str = ""):
     """Autocomplete: search order_items by part_no or description"""
+    active_store = get_active_store(request)
     db = SessionLocal()
     q = q.strip().upper()
     results = db.execute(text("""
         SELECT part_no, description, mrp, hsn
         FROM order_items
-        WHERE UPPER(part_no) LIKE :q OR UPPER(description) LIKE :q
+        WHERE store = :store AND (UPPER(part_no) LIKE :q OR UPPER(description) LIKE :q)
         LIMIT 20
-    """), {"q": f"%{q}%"}).fetchall()
+    """), {"q": f"%{q}%", "store": active_store}).fetchall()
     db.close()
     return [{"part_no": r.part_no, "description": r.description,
              "rate": float(r.mrp or 0), "hsn": str(r.hsn or "")} for r in results]
 
 @app.get("/search_vendors")
-def search_vendors(q: str = ""):
+def search_vendors(request: Request, q: str = ""):
     """Autocomplete: search vendors by name"""
+    active_store = get_active_store(request)
     db = SessionLocal()
     q_clean = f"%{q.strip().upper()}%"
     rows = db.execute(text("""
         SELECT name, address, mobile_num, gstin, email_id
         FROM vendors
-        WHERE UPPER(name) LIKE :q
+        WHERE store = :store AND UPPER(name) LIKE :q
         LIMIT 10
-    """), {"q": q_clean}).fetchall()
+    """), {"q": q_clean, "store": active_store}).fetchall()
     db.close()
     return [{
         "name": r.name,
@@ -1360,8 +1414,9 @@ def search_vendors(q: str = ""):
     } for r in rows]
 
 @app.get("/price_master")
-def price_master_list(page: int = 1, q: str = ""):
+def price_master_list(request: Request, page: int = 1, q: str = ""):
     """List all products in order_items (price master) with pagination"""
+    active_store = get_active_store(request)
     db = SessionLocal()
     per_page = 100
     offset = (page - 1) * per_page
@@ -1369,14 +1424,14 @@ def price_master_list(page: int = 1, q: str = ""):
     rows = db.execute(text("""
         SELECT id, part_no, description, hsn, mrp
         FROM order_items
-        WHERE UPPER(part_no) LIKE :q OR UPPER(description) LIKE :q
+        WHERE store = :store AND (UPPER(part_no) LIKE :q OR UPPER(description) LIKE :q)
         ORDER BY part_no
         LIMIT :lim OFFSET :off
-    """), {"q": q_clean, "lim": per_page, "off": offset}).fetchall()
+    """), {"q": q_clean, "lim": per_page, "off": offset, "store": active_store}).fetchall()
     total = db.execute(text("""
         SELECT COUNT(*) FROM order_items
-        WHERE UPPER(part_no) LIKE :q OR UPPER(description) LIKE :q
-    """), {"q": q_clean}).scalar()
+        WHERE store = :store AND (UPPER(part_no) LIKE :q OR UPPER(description) LIKE :q)
+    """), {"q": q_clean, "store": active_store}).scalar()
     db.close()
     return {"total": total, "page": page, "per_page": per_page,
             "items": [{"id": r.id, "part_no": r.part_no, "description": r.description,
@@ -1384,17 +1439,19 @@ def price_master_list(page: int = 1, q: str = ""):
 
 @app.post("/price_master/add")
 async def price_master_add(request: Request):
+    active_store = get_active_store(request)
     data = await request.json()
     db = SessionLocal()
-    existing = db.query(OrderItems).filter(OrderItems.part_no == data["part_no"].strip()).first()
+    existing = db.query(OrderItems).filter(OrderItems.part_no == data["part_no"].strip(), OrderItems.store == active_store).first()
     if existing:
         db.close()
-        return {"error": "Part No already exists"}
+        return {"error": "Part No already exists in this store"}
     item = OrderItems(
         part_no=data["part_no"].strip(),
         description=data.get("description", "").strip(),
         hsn=data.get("hsn", "").strip(),
-        mrp=float(data.get("mrp", 0))
+        mrp=float(data.get("mrp", 0)),
+        store=active_store
     )
     db.add(item)
     db.commit()
@@ -1439,6 +1496,7 @@ def generate_quotation_no(db):
 @app.post("/save_quotation")
 async def save_quotation(request: Request):
     """Save quotation to DB — NO stock change, NO sales report impact"""
+    active_store = get_active_store(request)
     data = await request.json()
     db = SessionLocal()
     rows = data.get("rows", [])
@@ -1454,7 +1512,7 @@ async def save_quotation(request: Request):
     # 1. Save or Update Vendor details if customer_name is provided
     if customer_name and customer_name.strip():
         c_name = customer_name.strip()
-        existing_vendor = db.query(Vendor).filter(Vendor.name == c_name).first()
+        existing_vendor = db.query(Vendor).filter(Vendor.name == c_name, Vendor.store == active_store).first()
         if existing_vendor:
             if customer_address: existing_vendor.address = customer_address.strip()
             if customer_mobile: existing_vendor.mobile_num = customer_mobile.strip()
@@ -1466,7 +1524,8 @@ async def save_quotation(request: Request):
                 address=customer_address.strip() if customer_address else "",
                 mobile_num=customer_mobile.strip() if customer_mobile else "",
                 gstin=customer_gstin.strip() if customer_gstin else "",
-                email_id=customer_email.strip() if customer_email else ""
+                email_id=customer_email.strip() if customer_email else "",
+                store=active_store
             )
             db.add(new_vendor)
         db.commit()
@@ -1483,7 +1542,8 @@ async def save_quotation(request: Request):
         customer_email=customer_email,
         date=datetime.now(),
         total_amount=round(total_amount, 2),
-        grand_total=round(grand_total, 2)
+        grand_total=round(grand_total, 2),
+        store=active_store
     )
     db.add(quot)
     db.flush()
@@ -1505,12 +1565,13 @@ async def save_quotation(request: Request):
     return {"ok": True, "quotation_no": q_no, "id": q_id}
 
 @app.get("/quotations")
-def list_quotations():
+def list_quotations(request: Request):
+    active_store = get_active_store(request)
     db = SessionLocal()
     rows = db.execute(text("""
         SELECT id, quotation_no, customer_name, customer_address, customer_gstin, customer_mobile, customer_email, date, grand_total
-        FROM quotations ORDER BY id DESC LIMIT 50
-    """)).fetchall()
+        FROM quotations WHERE store = :store ORDER BY id DESC LIMIT 50
+    """), {"store": active_store}).fetchall()
     db.close()
     return [{"id": r.id, "quotation_no": r.quotation_no,
              "customer_name": r.customer_name,
@@ -2323,9 +2384,10 @@ def export_all_quotations_excel(
     )
 
 @app.get("/out_of_stock_products")
-def get_out_of_stock_products():
+def get_out_of_stock_products(request: Request):
+    active_store = get_active_store(request)
     db = SessionLocal()
-    products = db.query(Product).filter(Product.quantity == 0).all()
+    products = db.query(Product).filter(Product.store == active_store, Product.quantity == 0).all()
     db.close()
     return [{
         "part_no": p.part_no,
@@ -2744,23 +2806,26 @@ from datetime import datetime
 
 @app.get("/sales_summary")
 def sales_summary(
+    request: Request,
     start_date: str = Query(...),
     end_date: str = Query(...),
     customer: str = Query(""),
     vendor: str = Query("")
 ):
+    active_store = get_active_store(request)
     db = SessionLocal()
 
     sql_parts = [
         "FROM invoice_items ii",
         "JOIN invoices i ON ii.invoice_id = i.id",
-        "LEFT JOIN products p ON ii.part_no = p.part_no",
-        "WHERE CAST(i.date AS DATE) BETWEEN :start AND :end"
+        "LEFT JOIN products p ON (ii.part_no = p.part_no AND p.store = :store)",
+        "WHERE i.store = :store AND CAST(i.date AS DATE) BETWEEN :start AND :end"
     ]
     
     params = {
         "start": start_date,
-        "end": end_date
+        "end": end_date,
+        "store": active_store
     }
     
     if customer:
@@ -2849,10 +2914,12 @@ def sales_summary(
 
 @app.get("/purchase_summary")
 def purchase_summary(
+    request: Request,
     start_date: str = Query(...),
     end_date: str = Query(...),
     vendor: str = Query("")
 ):
+    active_store = get_active_store(request)
     db = SessionLocal()
     
     summary_query = """
@@ -2860,19 +2927,20 @@ def purchase_summary(
             COUNT(*) as total_purchases,
             SUM(amount) as total_amount
         FROM purchases
-        WHERE CAST(date AS DATE) BETWEEN :start AND :end
+        WHERE store = :store AND CAST(date AS DATE) BETWEEN :start AND :end
     """
     
     items_query = """
         SELECT 
             id, vendor_name, part_no, description, hsn, quantity, rate, discount, amount, date
         FROM purchases
-        WHERE CAST(date AS DATE) BETWEEN :start AND :end
+        WHERE store = :store AND CAST(date AS DATE) BETWEEN :start AND :end
     """
     
     params = {
         "start": start_date,
-        "end": end_date
+        "end": end_date,
+        "store": active_store
     }
     
     if vendor.strip():
@@ -2906,22 +2974,25 @@ def purchase_summary(
 
 @app.get("/export_purchase_excel")
 def export_purchase_excel(
+    request: Request,
     start_date: str = Query(...),
     end_date: str = Query(...),
     vendor: str = Query("")
 ):
+    active_store = get_active_store(request)
     db = SessionLocal()
     
     items_query = """
         SELECT 
             date, vendor_name, part_no, description, hsn, quantity, rate, discount, amount
         FROM purchases
-        WHERE CAST(date AS DATE) BETWEEN :start AND :end
+        WHERE store = :store AND CAST(date AS DATE) BETWEEN :start AND :end
     """
     
     params = {
         "start": start_date,
-        "end": end_date
+        "end": end_date,
+        "store": active_store
     }
     
     if vendor.strip():
@@ -3132,16 +3203,18 @@ def upload_order(file: UploadFile = File(...)):
 
     return {"message": "Full order data saved ✅"}
 @app.get("/get_order_items")
-def get_order_items():
+def get_order_items(request: Request):
+    active_store = get_active_store(request)
     db = SessionLocal()
 
-    rows = db.execute(text("SELECT * FROM order_items")).fetchall()
+    rows = db.execute(text("SELECT * FROM order_items WHERE store = :store"), {"store": active_store}).fetchall()
     result = []
 
     for r in rows:
 
         stock = db.query(Product).filter(
-            Product.part_no == r.part_no
+            Product.part_no == r.part_no,
+            Product.store == active_store
         ).first()
 
         result.append({
@@ -3176,7 +3249,8 @@ async def chatbot_query(request: Request, data: ChatbotRequest):
     if not request.session.get("user"):
         return {"response": "⚠️ Unauthorized: Please log in to access the chatbot."}
     
-    response_text = query_chatbot(data.message, [h.dict() for h in data.history])
+    active_store = get_active_store(request)
+    response_text = query_chatbot(data.message, [h.dict() for h in data.history], store_name=active_store)
     return {"response": response_text}
 
 import os
