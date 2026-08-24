@@ -44,7 +44,7 @@ STORES = {
 def get_active_store(request: Request) -> str:
     store = request.session.get("active_store")
     if store not in STORES:
-        return ""
+        return "mahindra"
     return store
 
 @app.get("/select_store", response_class=HTMLResponse)
@@ -440,7 +440,7 @@ def home(request: Request, page: int = 1, q: str = ""):
     # Total value of all stock in DB for active store
     total_value_query = db.query(Product).filter(Product.store == active_store, Product.quantity > 0).all()
     total_value = sum(
-        (p.quantity * p.rate) - ((p.quantity * p.rate) * (p.discount / 100))
+        (p.quantity * (p.rate or 0)) - ((p.quantity * (p.rate or 0)) * ((p.discount or 0) / 100))
         for p in total_value_query
     )
 
@@ -918,8 +918,8 @@ def add_stock(id: int, qty: int = Form(...)):
     if product.quantity <= 0:
         product.amount = 0
     else:
-        product.amount = (product.quantity * product.rate) - (
-            (product.quantity * product.rate) * (product.discount / 100)
+        product.amount = (product.quantity * (product.rate or 0)) - (
+            (product.quantity * (product.rate or 0)) * ((product.discount or 0) / 100)
         )
 
     db.commit()
@@ -949,8 +949,8 @@ def issue_stock(id: int, qty: int = Form(...)):
         product.quantity = 0
         product.amount = 0
     else:
-        product.amount = (product.quantity * product.rate) - (
-            (product.quantity * product.rate) * (product.discount / 100)
+        product.amount = (product.quantity * (product.rate or 0)) - (
+            (product.quantity * (product.rate or 0)) * ((product.discount or 0) / 100)
         )
 
     # ✅ STEP 3: Save changes
@@ -1234,9 +1234,10 @@ def get_price(request: Request, part_no: str):
     active_store = get_active_store(request)
     db = SessionLocal()
 
-    # Check products table for existing vendor details and fallback rate
+    # Step 1: Check Stock Data (products table) FIRST
     prod = db.query(Product).filter(Product.part_no == part_no, Product.store == active_store).first()
 
+    # Step 2: Check Price Master (order_items table) as fallback
     price = db.query(OrderItems).filter(
         OrderItems.part_no == part_no,
         OrderItems.store == active_store
@@ -1244,9 +1245,14 @@ def get_price(request: Request, part_no: str):
 
     db.close()
 
-    rate = price.mrp if price else (prod.rate if prod else 0.0)
-    hsn = price.hsn if price else (prod.hsn if prod else "")
-    description = price.description if price else (prod.description if prod else "")
+    if prod and prod.rate and float(prod.rate) > 0:
+        rate = float(prod.rate)
+        description = prod.description or (price.description if price else "")
+        hsn = prod.hsn or (price.hsn if price else "")
+    else:
+        rate = float(price.mrp) if (price and price.mrp) else (float(prod.rate) if (prod and prod.rate) else 0.0)
+        description = price.description if price else (prod.description if prod else "")
+        hsn = price.hsn if price else (prod.hsn if prod else "")
 
     return {
         "rate": rate,
@@ -1307,25 +1313,24 @@ def get_rate(request: Request, part_no: str):
     active_store = get_active_store(request)
     db = SessionLocal()
 
-    # Step 1: Check order_items (price master)
+    # Step 1: Check products table (Stock Data) FIRST
+    product = db.query(Product).filter(Product.part_no == part_no, Product.store == active_store).first()
+    stock = int(product.quantity or 0) if product else 0
+
+    # Step 2: Check order_items (price master) as fallback
     item = db.execute(
         text("SELECT mrp, description, hsn FROM order_items WHERE part_no = :p AND store = :store"),
         {"p": part_no, "store": active_store}
     ).fetchone()
 
-    rate        = float(item.mrp)   if item and item.mrp         else 0.0
-    description = item.description  if item and item.description  else ""
-    hsn         = str(item.hsn)     if item and item.hsn          else ""
-    stock       = 0
-
-    # Step 2: Fallback to products table if rate is 0 or not found
-    product = db.query(Product).filter(Product.part_no == part_no, Product.store == active_store).first()
-    if product:
-        stock = int(product.quantity or 0)
-        if rate == 0:
-            rate        = float(product.rate or 0)
-            description = description or (product.description or "")
-            hsn         = hsn         or (product.hsn         or "")
+    if product and product.rate and float(product.rate) > 0:
+        rate = float(product.rate)
+        description = product.description or (item.description if item else "")
+        hsn = product.hsn or (str(item.hsn) if item else "")
+    else:
+        rate = float(item.mrp) if (item and item.mrp) else (float(product.rate) if (product and product.rate) else 0.0)
+        description = item.description if item else (product.description if product else "")
+        hsn = str(item.hsn) if item else (product.hsn if product else "")
 
     db.close()
     return {"rate": rate, "description": description, "hsn": hsn, "stock": stock}
@@ -1594,6 +1599,276 @@ def list_quotations(request: Request):
              "customer_email": r.customer_email,
              "date": str(r.date)[:10],
              "grand_total": float(r.grand_total or 0)} for r in rows]
+
+@app.get("/quotation_details/{q_id}")
+def quotation_details(q_id: int, request: Request):
+    active_store = get_active_store(request)
+    db = SessionLocal()
+    quot = db.query(Quotation).filter(Quotation.id == q_id, Quotation.store == active_store).first()
+    if not quot:
+        db.close()
+        return {"error": "Quotation not found"}
+    items = db.query(QuotationItem).filter(QuotationItem.quotation_id == q_id).all()
+    db.close()
+    return {
+        "id": quot.id,
+        "quotation_no": quot.quotation_no,
+        "customer_name": quot.customer_name or "",
+        "customer_address": quot.customer_address or "",
+        "customer_gstin": quot.customer_gstin or "",
+        "customer_mobile": quot.customer_mobile or "",
+        "customer_email": quot.customer_email or "",
+        "total_amount": float(quot.total_amount or 0.0),
+        "grand_total": float(quot.grand_total or 0.0),
+        "items": [{
+            "part_no": it.part_no,
+            "description": it.description,
+            "rate": float(it.rate or 0.0),
+            "qty": int(it.qty or 0),
+            "discount": float(it.discount or 0.0),
+            "amount": float(it.amount or 0.0),
+            "hsn": it.hsn
+        } for it in items]
+    }
+
+@app.post("/update_quotation/{q_id}")
+async def update_quotation(q_id: int, request: Request):
+    active_store = get_active_store(request)
+    data = await request.json()
+    db = SessionLocal()
+    quot = db.query(Quotation).filter(Quotation.id == q_id, Quotation.store == active_store).first()
+    if not quot:
+        db.close()
+        return {"error": "Quotation not found"}
+
+    rows = data.get("rows", [])
+    if not rows:
+        db.close()
+        return {"error": "No products provided"}
+
+    quot.customer_name = data.get("customer_name", quot.customer_name)
+    quot.customer_address = data.get("customer_address", quot.customer_address)
+    quot.customer_gstin = data.get("customer_gstin", quot.customer_gstin)
+    quot.customer_mobile = data.get("customer_mobile", quot.customer_mobile)
+    quot.customer_email = data.get("customer_email", quot.customer_email)
+
+    db.query(QuotationItem).filter(QuotationItem.quotation_id == q_id).delete()
+
+    total_amount = sum(r["rate"] * r["qty"] * (1 - r.get("discount", 0)/100) for r in rows)
+    grand_total = total_amount * 1.18
+
+    quot.total_amount = round(total_amount, 2)
+    quot.grand_total = round(grand_total, 2)
+
+    for r in rows:
+        sub = r["rate"] * r["qty"] * (1 - r.get("discount", 0)/100)
+        db.add(QuotationItem(
+            quotation_id=quot.id,
+            part_no=r.get("part_no", ""),
+            description=r.get("description", ""),
+            rate=float(r["rate"]),
+            qty=int(r["qty"]),
+            discount=float(r.get("discount", 0)),
+            amount=round(sub, 2),
+            hsn=r.get("hsn", "")
+        ))
+    q_no = quot.quotation_no
+    q_id_val = quot.id
+    db.commit()
+    db.close()
+    return {"ok": True, "quotation_no": q_no, "id": q_id_val}
+
+# ---------------- TAX INVOICE EDITING & CORRECTION ----------------
+
+@app.get("/invoices_list")
+def list_invoices(request: Request, q: str = ""):
+    active_store = get_active_store(request)
+    db = SessionLocal()
+    q_clean = f"%{q.strip().upper()}%"
+    sql = """
+        SELECT id, invoice_no, customer_name, customer_address, customer_gstin, customer_mobile, customer_email, date, total_amount, gst_amount, grand_total
+        FROM invoices
+        WHERE store = :store AND (UPPER(invoice_no) LIKE :q OR UPPER(customer_name) LIKE :q)
+        ORDER BY date DESC
+        LIMIT 50
+    """
+    rows = db.execute(text(sql), {"store": active_store, "q": q_clean}).fetchall()
+    db.close()
+    return [{
+        "id": r.id,
+        "invoice_no": r.invoice_no,
+        "customer_name": r.customer_name,
+        "customer_address": r.customer_address,
+        "customer_gstin": r.customer_gstin,
+        "customer_mobile": r.customer_mobile,
+        "customer_email": r.customer_email,
+        "date": safe_format_datetime(r.date),
+        "total_amount": float(r.total_amount or 0.0),
+        "gst_amount": float(r.gst_amount or 0.0),
+        "grand_total": float(r.grand_total or 0.0)
+    } for r in rows]
+
+@app.get("/invoice_details/{inv_id}")
+def invoice_details(inv_id: int, request: Request):
+    active_store = get_active_store(request)
+    db = SessionLocal()
+    inv = db.query(Invoice).filter(Invoice.id == inv_id, Invoice.store == active_store).first()
+    if not inv:
+        db.close()
+        return {"error": "Invoice not found"}
+    items_rows = db.execute(text("""
+        SELECT part_no, description, quantity, rate, amount, hsn, purchase_rate
+        FROM invoice_items WHERE invoice_id = :iid
+    """), {"iid": inv_id}).fetchall()
+    db.close()
+    items = []
+    for r in items_rows:
+        sub = r.rate * r.quantity
+        taxable = r.amount
+        disc_amt = max(0.0, sub - taxable)
+        disc_pct = round((disc_amt / sub) * 100, 2) if sub > 0 else 0.0
+        items.append({
+            "part_no": r.part_no,
+            "description": r.description,
+            "hsn": r.hsn,
+            "rate": float(r.rate),
+            "qty": float(r.quantity),
+            "discount": disc_pct,
+            "taxable": round(taxable, 2),
+            "purchase_rate": float(r.purchase_rate or 0.0)
+        })
+    return {
+        "id": inv.id,
+        "invoice_no": inv.invoice_no,
+        "customer_name": inv.customer_name or "",
+        "customer_address": inv.customer_address or "",
+        "customer_gstin": inv.customer_gstin or "",
+        "customer_mobile": inv.customer_mobile or "",
+        "customer_email": inv.customer_email or "",
+        "date": safe_format_datetime(inv.date),
+        "total_amount": float(inv.total_amount or 0.0),
+        "gst_amount": float(inv.gst_amount or 0.0),
+        "grand_total": float(inv.grand_total or 0.0),
+        "items": items
+    }
+
+@app.post("/update_invoice/{inv_id}")
+async def update_invoice(inv_id: int, request: Request):
+    active_store = get_active_store(request)
+    data = await request.json()
+    db = SessionLocal()
+    try:
+        inv = db.query(Invoice).filter(Invoice.id == inv_id, Invoice.store == active_store).first()
+        if not inv:
+            db.close()
+            return {"error": "Invoice not found"}
+
+        rows = data.get("rows", [])
+        if not rows:
+            db.close()
+            return {"error": "No items provided for invoice update"}
+
+        # 1. Revert previous stock subtractions
+        old_items = db.execute(text("""
+            SELECT part_no, quantity FROM invoice_items WHERE invoice_id = :iid
+        """), {"iid": inv_id}).fetchall()
+
+        for old_it in old_items:
+            p = db.query(Product).filter(Product.part_no == old_it.part_no, Product.store == active_store).first()
+            if p:
+                p.quantity += int(old_it.quantity or 0)
+                p.amount = (p.quantity * (p.rate or 0)) - ((p.quantity * (p.rate or 0)) * ((p.discount or 0) / 100))
+
+        # 2. Validate and apply new stock quantities
+        from collections import defaultdict
+        qty_map = defaultdict(float)
+        for r in rows:
+            qty_map[r["part_no"]] += float(r["qty"])
+
+        for part_no, total_qty in qty_map.items():
+            product = db.query(Product).filter(Product.part_no == part_no, Product.store == active_store).first()
+            if not product or product.quantity < total_qty:
+                raise ValueError(f"Not enough stock for {part_no} (Available: {product.quantity if product else 0}, Required: {total_qty})")
+
+        # Update customer details
+        inv.customer_name = data.get("customer_name", inv.customer_name)
+        inv.customer_address = data.get("customer_address", inv.customer_address)
+        inv.customer_gstin = data.get("customer_gstin", inv.customer_gstin)
+        inv.customer_mobile = data.get("customer_mobile", inv.customer_mobile)
+        inv.customer_email = data.get("customer_email", inv.customer_email)
+
+        # Clear existing invoice items
+        db.execute(text("DELETE FROM invoice_items WHERE invoice_id = :iid"), {"iid": inv_id})
+
+        items = []
+        subtotal = 0.0
+        for row in rows:
+            product = db.query(Product).filter(Product.part_no == row["part_no"], Product.store == active_store).first()
+            db_item = db.execute(
+                text("SELECT description, mrp, hsn FROM order_items WHERE part_no=:p AND store=:store"),
+                {"p": row["part_no"], "store": active_store}
+            ).fetchone()
+
+            desc = row.get("description", "") or (product.description if product else "") or (db_item.description if db_item else "")
+            hsn = row.get("hsn", "") or (product.hsn if product else "") or (str(db_item.hsn) if db_item else "")
+
+            rate = float(row.get("rate", 0))
+            if rate == 0 and product and product.rate and float(product.rate) > 0:
+                rate = float(product.rate)
+            if rate == 0 and db_item and db_item.mrp and float(db_item.mrp) > 0:
+                rate = float(db_item.mrp)
+
+            qty = float(row.get("qty", 1))
+            disc = float(row.get("discount", 0))
+
+            purchase_rate = 0.0
+            if product:
+                purchase_rate = float(product.rate or 0.0)
+                product.quantity -= int(qty)
+                if product.quantity <= 0:
+                    product.quantity = 0
+                    product.amount = 0
+                else:
+                    product.amount = (product.quantity * (product.rate or 0)) - ((product.quantity * (product.rate or 0)) * ((product.discount or 0) / 100))
+
+            base = qty * rate
+            discount_amt = base * (disc / 100)
+            taxable = base - discount_amt
+            subtotal += taxable
+
+            db.execute(text("""
+                INSERT INTO invoice_items 
+                (invoice_id, part_no, description, quantity, rate, amount, hsn, purchase_rate)
+                VALUES (:iid, :p, :d, :q, :r, :amt, :hsn, :prate)
+            """), {
+                "iid": inv_id,
+                "p": row["part_no"],
+                "d": desc,
+                "q": qty,
+                "r": rate,
+                "amt": round(taxable, 2),
+                "hsn": hsn,
+                "prate": purchase_rate
+            })
+
+        cgst = round(subtotal * 0.09, 2)
+        sgst = round(subtotal * 0.09, 2)
+        total = round(subtotal + cgst + sgst, 2)
+
+        inv.total_amount = round(subtotal, 2)
+        inv.gst_amount = cgst + sgst
+        inv.grand_total = total
+
+        inv_no = inv.invoice_no
+        inv_id_val = inv.id
+        db.commit()
+        db.close()
+        return {"ok": True, "invoice_no": inv_no, "id": inv_id_val}
+
+    except Exception as e:
+        db.rollback()
+        db.close()
+        return {"error": str(e)}
 
 @app.post("/download_quotation_pdf")
 async def download_quotation_pdf(request: Request):
@@ -2648,33 +2923,27 @@ async def download_pdf(request: Request):
         # ===============================
         items = []
         subtotal = 0
+        active_store = get_active_store(request)
 
         for row in data:
-
+            product = db.query(Product).filter(Product.part_no == row["part_no"], Product.store == active_store).first()
             db_item = db.execute(
-                text("SELECT description, mrp, hsn FROM order_items WHERE part_no=:p"),
-                {"p": row["part_no"]}
+                text("SELECT description, mrp, hsn FROM order_items WHERE part_no=:p AND store=:store"),
+                {"p": row["part_no"], "store": active_store}
             ).fetchone()
 
-            desc = db_item.description if db_item and db_item.description else row.get("description", "")
-            hsn  = str(db_item.hsn)    if db_item and db_item.hsn         else row.get("hsn", "")
+            desc = row.get("description", "") or (product.description if product else "") or (db_item.description if db_item else "")
+            hsn = row.get("hsn", "") or (product.hsn if product else "") or (str(db_item.hsn) if db_item else "")
 
-            # Rate: orders.csv MRP first, then UI-entered rate, then product purchase rate
-            rate = float(db_item.mrp) if db_item and db_item.mrp and float(db_item.mrp) > 0 else float(row.get("rate", 0))
-            if rate == 0:
-                prod_fallback = db.query(Product).filter(Product.part_no == row["part_no"]).first()
-                if prod_fallback:
-                    rate = float(prod_fallback.rate or 0)
-                    desc = desc or (prod_fallback.description or "")
-                    hsn  = hsn  or (prod_fallback.hsn         or "")
+            # Rate Priority: 1. UI entered rate, 2. Stock Data rate, 3. Price Master MRP
+            rate = float(row.get("rate", 0))
+            if rate == 0 and product and product.rate and float(product.rate) > 0:
+                rate = float(product.rate)
+            if rate == 0 and db_item and db_item.mrp and float(db_item.mrp) > 0:
+                rate = float(db_item.mrp)
 
             qty  = float(row.get("qty", 1))
             disc = float(row.get("discount", 0))
-
-            # 🔥 UPDATE STOCK
-            product = db.query(Product).filter(
-                Product.part_no == row["part_no"]
-            ).first()
 
             purchase_rate = 0.0
             if product:
@@ -2685,8 +2954,8 @@ async def download_pdf(request: Request):
                     product.quantity = 0
                     product.amount = 0
                 else:
-                    product.amount = (product.quantity * product.rate) - (
-                        (product.quantity * product.rate) * (product.discount / 100)
+                    product.amount = (product.quantity * (product.rate or 0)) - (
+                        (product.quantity * (product.rate or 0)) * ((product.discount or 0) / 100)
                     )
 
             # 🔥 CALCULATIONS
@@ -2727,10 +2996,10 @@ async def download_pdf(request: Request):
             result = db.execute(text("""
                 INSERT INTO invoices (
                     invoice_no, customer_name, customer_address, customer_gstin, customer_mobile, customer_email, date,
-                    total_amount, gst_amount, grand_total
+                    total_amount, gst_amount, grand_total, store
                 ) VALUES (
                     :inv, :cust, :address, :gstin, :mobile, :email, :date,
-                    :total, :gst, :grand
+                    :total, :gst, :grand, :store
                 ) RETURNING id
             """), {
                 "inv": invoice_no, "cust": customer_name,
@@ -2738,17 +3007,18 @@ async def download_pdf(request: Request):
                 "mobile": customer_mobile, "email": customer_email,
                 "date": datetime.utcnow(),
                 "total": round(subtotal, 2),
-                "gst": cgst + sgst, "grand": total
+                "gst": cgst + sgst, "grand": total,
+                "store": active_store
             })
             invoice_id = result.fetchone()[0]
         else:
             result = db.execute(text("""
                 INSERT INTO invoices (
                     invoice_no, customer_name, customer_address, customer_gstin, customer_mobile, customer_email, date,
-                    total_amount, gst_amount, grand_total
+                    total_amount, gst_amount, grand_total, store
                 ) VALUES (
                     :inv, :cust, :address, :gstin, :mobile, :email, :date,
-                    :total, :gst, :grand
+                    :total, :gst, :grand, :store
                 )
             """), {
                 "inv": invoice_no, "cust": customer_name,
@@ -2756,7 +3026,8 @@ async def download_pdf(request: Request):
                 "mobile": customer_mobile, "email": customer_email,
                 "date": datetime.utcnow(),
                 "total": round(subtotal, 2),
-                "gst": cgst + sgst, "grand": total
+                "gst": cgst + sgst, "grand": total,
+                "store": active_store
             })
             invoice_id = result.lastrowid
 

@@ -1199,6 +1199,7 @@
 
 
         <!-- ── QUOTATION ── -->
+        <!-- ── QUOTATION ── -->
         <!-- ══ QUOTATION (no stock change) ══ -->
         <div class="section-card" id="quotation-section">
             <div class="section-header">
@@ -1206,10 +1207,15 @@
                 <div style="display:flex;gap:8px;">
                     <button onclick="addQRow()" class="btn btn-ghost btn-sm">+ Add Row</button>
                     <button onclick="downloadQuotationPDF()" class="btn btn-primary btn-sm">📄 Download PDF</button>
-                    <button onclick="saveQuotation()" class="btn btn-success btn-sm">💾 Save Proforma</button>
+                    <button id="q_save_btn" onclick="saveQuotation()" class="btn btn-success btn-sm">💾 Save Proforma</button>
                 </div>
             </div>
             <div class="section-body">
+                <div id="q_edit_banner" style="display:none; background:#fffbeb; border:1px solid #fde68a; color:#b45309; padding:8px 14px; border-radius:8px; margin-bottom:12px; align-items:center; justify-content:space-between; font-size:13px; font-weight:600;">
+                    <span id="q_edit_banner_text">✏️ Editing Proforma Invoice...</span>
+                    <button onclick="cancelQuotationEdit()" class="btn btn-ghost btn-sm" style="color:#b45309;">Cancel Editing</button>
+                </div>
+
                 <div class="form-row" style="margin-bottom:12px; gap:12px;">
                     <div class="form-field" style="position:relative;flex:2;">
                         <label>Customer / Party Name</label>
@@ -1276,10 +1282,16 @@
                 <div class="section-title">🧾 Raise Invoice <span style="font-size:11px;font-weight:400;color:var(--danger);margin-left:8px;">— Deducts stock & updates sales</span></div>
                 <div style="display:flex;gap:8px;">
                     <button onclick="addInvRow()" class="btn btn-ghost btn-sm">+ Add Row</button>
-                    <button onclick="raiseInvoice()" class="btn btn-danger btn-sm">🧾 Raise Invoice (PDF)</button>
+                    <button onclick="loadInvoiceList()" class="btn btn-warning btn-sm">📜 History & Correct</button>
+                    <button id="inv_raise_btn" onclick="raiseInvoice()" class="btn btn-danger btn-sm">🧾 Raise Invoice (PDF)</button>
                 </div>
             </div>
             <div class="section-body">
+                <div id="inv_edit_banner" style="display:none; background:#fef2f2; border:1px solid #fecaca; color:#991b1b; padding:8px 14px; border-radius:8px; margin-bottom:12px; align-items:center; justify-content:space-between; font-size:13px; font-weight:600;">
+                    <span id="inv_edit_banner_text">✏️ Correcting Tax Invoice...</span>
+                    <button onclick="cancelInvoiceEdit()" class="btn btn-ghost btn-sm" style="color:#991b1b;">Cancel Correction</button>
+                </div>
+
                 <div class="form-row" style="margin-bottom:12px; gap:12px;">
                     <div class="form-field" style="position:relative;flex:2;">
                         <label>Customer / Party Name</label>
@@ -1323,6 +1335,17 @@
                 <div class="grand-total-row">
                     <span class="grand-total-label">Grand Total (incl. 18% GST)</span>
                     <span class="grand-total-value">₹ <span id="inv_grand_total">0.00</span></span>
+                </div>
+
+                <!-- Saved Tax Invoices list for Correction -->
+                <div id="invoice-list-wrap" style="margin-top:30px; border-top: 1px solid var(--border); padding-top: 20px;">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; flex-wrap:wrap; gap:10px;">
+                        <div style="font-size:14px; font-weight:700; color:var(--text);">🧾 Saved Tax Invoices (History & Correction)</div>
+                        <div style="display:flex; gap:8px; align-items:center;">
+                            <input type="text" id="inv_search_query" onkeyup="loadInvoiceList()" class="form-input" placeholder="Search by Invoice No or Customer..." style="width:240px; padding:4px 10px; font-size:12px;">
+                        </div>
+                    </div>
+                    <div id="invoice-list"></div>
                 </div>
             </div>
         </div>
@@ -2201,6 +2224,9 @@ async function downloadQuotationPDF(){
     const w = window.open(); w.document.open(); w.document.write(html); w.document.close();
 }
 
+let editing_quotation_id = null;
+let editing_invoice_id = null;
+
 async function saveQuotation(){
     const filtered = qRows.filter(r=>r.part_no && r.rate>0);
     if (!filtered.length){ alert('Add at least one product with a valid rate'); return; }
@@ -2209,25 +2235,74 @@ async function saveQuotation(){
     const gstin = document.getElementById('q_customer_gstin').value;
     const mobile = document.getElementById('q_customer_mobile').value;
     const email = document.getElementById('q_customer_email').value;
-    const res = await fetch('/save_quotation',{method:'POST',headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({rows: filtered, customer_name: customer, customer_address: address, customer_gstin: gstin, customer_mobile: mobile, customer_email: email})});
+
+    const payload = {rows: filtered, customer_name: customer, customer_address: address, customer_gstin: gstin, customer_mobile: mobile, customer_email: email};
+    const url = editing_quotation_id ? `/update_quotation/${editing_quotation_id}` : '/save_quotation';
+
+    const res = await fetch(url, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)});
     const data = await res.json();
     if (data.ok) {
+        alert(editing_quotation_id ? `✅ Proforma Invoice ${data.quotation_no} updated successfully!` : `✅ Proforma Invoice saved: ${data.quotation_no}`);
+        cancelQuotationEdit();
         loadQuotationList();
         
-        // Dynamic sharing dialog
-        setTimeout(() => {
-            const share = confirm(`✅ Proforma Invoice saved: ${data.quotation_no}\n\nWould you like to send/share this quotation with the customer now?`);
-            if (share) {
-                const opt = prompt("How would you like to share this proforma invoice?\nType 'w' for WhatsApp\nType 'e' for Email", "w");
-                if (opt && opt.toLowerCase().trim() === 'w') {
-                    shareWhatsApp(mobile, data.quotation_no, data.id, '');
-                } else if (opt && opt.toLowerCase().trim() === 'e') {
-                    shareEmail(email, data.quotation_no, data.id, '');
+        if (!editing_quotation_id) {
+            setTimeout(() => {
+                const share = confirm(`✅ Proforma Invoice saved: ${data.quotation_no}\n\nWould you like to send/share this quotation with the customer now?`);
+                if (share) {
+                    const opt = prompt("How would you like to share this proforma invoice?\nType 'w' for WhatsApp\nType 'e' for Email", "w");
+                    if (opt && opt.toLowerCase().trim() === 'w') {
+                        shareWhatsApp(mobile, data.quotation_no, data.id, '');
+                    } else if (opt && opt.toLowerCase().trim() === 'e') {
+                        shareEmail(email, data.quotation_no, data.id, '');
+                    }
                 }
-            }
-        }, 100);
+            }, 100);
+        }
     } else { alert('Error: ' + (data.error||'Unknown')); }
+}
+
+async function editQuotation(q_id){
+    const res = await fetch(`/quotation_details/${q_id}`);
+    const data = await res.json();
+    if (data.error){ alert('Error loading quotation: ' + data.error); return; }
+
+    document.getElementById('q_customer').value = data.customer_name || '';
+    document.getElementById('q_customer_address').value = data.customer_address || '';
+    document.getElementById('q_customer_mobile').value = data.customer_mobile || '';
+    document.getElementById('q_customer_gstin').value = data.customer_gstin || '';
+    document.getElementById('q_customer_email').value = data.customer_email || '';
+
+    qRows = data.items.map(it => ({
+        part_no: it.part_no,
+        description: it.description,
+        rate: it.rate,
+        qty: it.qty,
+        discount: it.discount,
+        stock: 0,
+        hsn: it.hsn
+    }));
+    if (!qRows.length) addQRow();
+    renderQRows();
+
+    editing_quotation_id = q_id;
+    document.getElementById('q_edit_banner').style.display = 'flex';
+    document.getElementById('q_edit_banner_text').textContent = `✏️ Editing Proforma Invoice: ${data.quotation_no} (Click 'Update Proforma' to save changes)`;
+    document.getElementById('q_save_btn').textContent = '💾 Update Proforma';
+    document.getElementById('quotation-section').scrollIntoView({ behavior: 'smooth' });
+}
+
+function cancelQuotationEdit(){
+    editing_quotation_id = null;
+    document.getElementById('q_edit_banner').style.display = 'none';
+    document.getElementById('q_save_btn').textContent = '💾 Save Proforma';
+    document.getElementById('q_customer').value = '';
+    document.getElementById('q_customer_address').value = '';
+    document.getElementById('q_customer_mobile').value = '';
+    document.getElementById('q_customer_gstin').value = '';
+    document.getElementById('q_customer_email').value = '';
+    qRows = [];
+    addQRow();
 }
 
 async function loadQuotationList(){
@@ -2235,13 +2310,14 @@ async function loadQuotationList(){
     const data = await res.json();
     if (!data.length){ document.getElementById('quotation-list').innerHTML='<div style="color:var(--text-muted);font-size:13px;">No proforma invoices yet</div>'; return; }
     document.getElementById('quotation-list').innerHTML = `<table class="data-table" style="font-size:12px;">
-        <thead><tr><th>Proforma Invoice No</th><th>Customer</th><th>Date</th><th>Grand Total (₹)</th><th style="width:280px;text-align:center;">Actions</th></tr></thead>
+        <thead><tr><th>Proforma Invoice No</th><th>Customer</th><th>Date</th><th>Grand Total (₹)</th><th style="width:320px;text-align:center;">Actions</th></tr></thead>
         <tbody>${data.map(q=>`<tr>
             <td style="font-weight:600;">${q.quotation_no}</td>
             <td>${q.customer_name||'—'}</td>
             <td>${q.date}</td>
             <td>₹ ${q.grand_total.toLocaleString('en-IN',{minimumFractionDigits:2})}</td>
             <td style="text-align:center;">
+                <button onclick="editQuotation(${q.id})" class="btn btn-ghost btn-sm" style="padding:2px 8px;font-size:11px;color:#d97706;border:none;background:none;cursor:pointer;font-weight:600;">✏️ Edit</button>
                 <a href="/view_quotation_saved/${q.id}" target="_blank" class="btn btn-ghost btn-sm" style="padding:2px 8px;font-size:11px;color:var(--primary);text-decoration:none;">👁️ View</a>
                 <a href="/download_quotation_pdf_file/${q.id}" class="btn btn-ghost btn-sm" style="padding:2px 8px;font-size:11px;color:#e11d48;text-decoration:none;">📄 PDF</a>
                 <a href="/export_quotation_excel/${q.id}" class="btn btn-ghost btn-sm" style="padding:2px 8px;font-size:11px;color:var(--success);text-decoration:none;">⬇ Excel</a>
@@ -2263,18 +2339,15 @@ function shareWhatsApp(mobile, quotationNo, id, grandTotal) {
         alert("Mobile number is required to share via WhatsApp.");
         return;
     }
-    // Sanitize phone number (digits only)
     let sanitizedPhone = phone.replace(/\D/g, "");
     if (sanitizedPhone.length === 10) {
-        sanitizedPhone = "91" + sanitizedPhone; // Default to India country code
+        sanitizedPhone = "91" + sanitizedPhone;
     }
-    
     let text = `Dear Customer,\n\nPlease find the Proforma Invoice *${quotationNo}* from *Mahindra Pro Spares* attached below.\n\n`;
     if (grandTotal && parseFloat(grandTotal) > 0) {
         text += `Grand Total: ₹ ${parseFloat(grandTotal).toLocaleString('en-IN', {minimumFractionDigits:2})}\n\n`;
     }
     text += `Thank you for your business!`;
-    
     window.open(`https://wa.me/${sanitizedPhone}?text=${encodeURIComponent(text)}`, '_blank');
 }
 
@@ -2289,14 +2362,12 @@ function shareEmail(email, quotationNo, id, grandTotal) {
         alert("Email address is required to share via Email.");
         return;
     }
-    
     const subject = `Proforma Invoice ${quotationNo} - Mahindra Pro Spares`;
     let body = `Dear Customer,\n\nPlease find the Proforma Invoice ${quotationNo} from Mahindra Pro Spares attached below.\n\n`;
     if (grandTotal && parseFloat(grandTotal) > 0) {
         body += `Grand Total: ₹ ${parseFloat(grandTotal).toLocaleString('en-IN', {minimumFractionDigits:2})}\n\n`;
     }
     body += `Thank you for your business!`;
-    
     window.location.href = `mailto:${toEmail}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
 }
 
@@ -2354,34 +2425,116 @@ async function fetchInvStock(i){
     if (!invRows[i].part_no) return;
     const d = await (await fetch(`/get_rate/${encodeURIComponent(invRows[i].part_no)}`)).json();
     invRows[i].stock = d.stock || 0;
-    // Auto-fill description/rate/hsn from orders.csv if not already set
     if (d.description) invRows[i].description = d.description;
     if (d.rate && d.rate > 0) invRows[i].rate = d.rate;
     if (d.hsn) invRows[i].hsn = d.hsn;
-    // Cap qty to available stock
     if (invRows[i].qty > invRows[i].stock && invRows[i].stock > 0) invRows[i].qty = invRows[i].stock;
     renderInvRows();
+}
+
+async function loadInvoiceList(){
+    const q = document.getElementById('inv_search_query')?.value || '';
+    const res = await fetch(`/invoices_list?q=${encodeURIComponent(q)}`);
+    const data = await res.json();
+    if (!data.length){ document.getElementById('invoice-list').innerHTML='<div style="color:var(--text-muted);font-size:13px;">No tax invoices found</div>'; return; }
+    document.getElementById('invoice-list').innerHTML = `<table class="data-table" style="font-size:12px;">
+        <thead><tr><th>Invoice No</th><th>Customer</th><th>Date</th><th>Taxable (₹)</th><th>GST (₹)</th><th>Grand Total (₹)</th><th style="width:200px;text-align:center;">Actions</th></tr></thead>
+        <tbody>${data.map(inv=>`<tr>
+            <td style="font-weight:600;">${inv.invoice_no}</td>
+            <td>${inv.customer_name||'—'}</td>
+            <td>${inv.date}</td>
+            <td>₹ ${inv.total_amount.toLocaleString('en-IN',{minimumFractionDigits:2})}</td>
+            <td>₹ ${inv.gst_amount.toLocaleString('en-IN',{minimumFractionDigits:2})}</td>
+            <td style="font-weight:700;color:var(--danger);">₹ ${inv.grand_total.toLocaleString('en-IN',{minimumFractionDigits:2})}</td>
+            <td style="text-align:center;">
+                <a href="/view_invoice/${inv.id}" target="_blank" class="btn btn-ghost btn-sm" style="padding:2px 8px;font-size:11px;color:var(--primary);text-decoration:none;">📄 View PDF</a>
+                <button onclick="editInvoice(${inv.id})" class="btn btn-ghost btn-sm" style="padding:2px 8px;font-size:11px;color:#d97706;border:none;background:none;cursor:pointer;font-weight:600;">✏️ Edit & Correct</button>
+            </td>
+        </tr>`).join('')}</tbody>
+    </table>`;
+}
+
+async function editInvoice(inv_id){
+    const res = await fetch(`/invoice_details/${inv_id}`);
+    const data = await res.json();
+    if (data.error){ alert('Error loading invoice: ' + data.error); return; }
+
+    document.getElementById('inv_customer').value = data.customer_name || '';
+    document.getElementById('inv_customer_address').value = data.customer_address || '';
+    document.getElementById('inv_customer_mobile').value = data.customer_mobile || '';
+    document.getElementById('inv_customer_gstin').value = data.customer_gstin || '';
+    document.getElementById('inv_customer_email').value = data.customer_email || '';
+
+    invRows = data.items.map(it => ({
+        part_no: it.part_no,
+        description: it.description,
+        rate: it.rate,
+        qty: it.qty,
+        discount: it.discount,
+        stock: 99999,
+        hsn: it.hsn
+    }));
+    if (!invRows.length) addInvRow();
+    renderInvRows();
+
+    editing_invoice_id = inv_id;
+    document.getElementById('inv_edit_banner').style.display = 'flex';
+    document.getElementById('inv_edit_banner_text').textContent = `✏️ Correcting Tax Invoice: ${data.invoice_no} — Saving will update invoice & adjust stock levels accordingly`;
+    document.getElementById('inv_raise_btn').textContent = '💾 Save Corrected Invoice & PDF';
+    document.getElementById('invoice-section').scrollIntoView({ behavior: 'smooth' });
+}
+
+function cancelInvoiceEdit(){
+    editing_invoice_id = null;
+    document.getElementById('inv_edit_banner').style.display = 'none';
+    document.getElementById('inv_raise_btn').textContent = '🧾 Raise Invoice (PDF)';
+    document.getElementById('inv_customer').value = '';
+    document.getElementById('inv_customer_address').value = '';
+    document.getElementById('inv_customer_mobile').value = '';
+    document.getElementById('inv_customer_gstin').value = '';
+    document.getElementById('inv_customer_email').value = '';
+    invRows = [];
+    addInvRow();
 }
 
 async function raiseInvoice(){
     const filtered = invRows.filter(r=>r.part_no && r.qty>0);
     if (!filtered.length){ alert('Add at least one product'); return; }
-    const outOfStock = filtered.filter(r=>r.stock===0 && r.part_no);
-    if (outOfStock.length){ alert('Out of stock: ' + outOfStock.map(r=>r.part_no).join(', ')); return; }
     const customer = (document.getElementById('inv_customer')?.value || '').trim();
     const address = (document.getElementById('inv_customer_address')?.value || '').trim();
     const gstin = (document.getElementById('inv_customer_gstin')?.value || '').trim();
     const mobile = (document.getElementById('inv_customer_mobile')?.value || '').trim();
     const email = (document.getElementById('inv_customer_email')?.value || '').trim();
     const payload = { rows: filtered, customer_name: customer, customer_address: address, customer_gstin: gstin, customer_mobile: mobile, customer_email: email };
-    const res = await fetch('/download_pdf',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
-    if (!res.ok) { const e = await res.text(); alert('Error: ' + e); return; }
-    const html = await res.text();
-    const w = window.open('','_blank'); w.document.open(); w.document.write(html); w.document.close();
-    setTimeout(() => location.reload(), 800);
+
+    if (editing_invoice_id) {
+        const updateRes = await fetch(`/update_invoice/${editing_invoice_id}`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(payload)
+        });
+        const updateData = await updateRes.json();
+        if (updateData.error) {
+            alert('Error updating invoice: ' + updateData.error);
+            return;
+        }
+        alert(`✅ Tax Invoice ${updateData.invoice_no} corrected & stock updated successfully!`);
+        cancelInvoiceEdit();
+        loadInvoiceList();
+        const pdfRes = await fetch(`/view_invoice/${updateData.id}`);
+        const html = await pdfRes.text();
+        const w = window.open('','_blank'); w.document.open(); w.document.write(html); w.document.close();
+    } else {
+        const res = await fetch('/download_pdf',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+        if (!res.ok) { const e = await res.text(); alert('Error: ' + e); return; }
+        const html = await res.text();
+        const w = window.open('','_blank'); w.document.open(); w.document.write(html); w.document.close();
+        setTimeout(() => location.reload(), 800);
+    }
 }
 
 addInvRow();
+loadInvoiceList();
 
 // ══════════════════════════════════════════
 // PRICE MASTER TAB
