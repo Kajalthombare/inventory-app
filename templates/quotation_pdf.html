@@ -120,14 +120,14 @@ tr:nth-child(even) {
     <div class="company">
         <h2>{{ seller.name if seller and seller.name else "MAHINDRA PRO SPARES" }}</h2>
         <p>
-            {{ (seller.address if seller and seller.address else "SHOP NO.01, CIDCO BUILDING,\nNEAR DEVANSHI HOTEL, TRUCK TERMINAL,\nKALAMBOLI, PANVEL, RAIGAD,\nMAHARASHTRA 410218").replace('\n', '<br>') | safe }}
+            {{ (seller.address if seller and seller.address else "At padeghar post, Kundewhal,\nnear JWR logistics, Ulwe,\nPanvel JNPT road, Panvel 410206").replace('\n', '<br>') | safe }}
         </p>
 
         <p>
             GSTIN / UIN: {{ seller.gstin if seller and seller.gstin else "27BHIPM7720B1ZH" }}<br>
             {% if seller and seller.pan %}Party PAN: {{ seller.pan }}<br>{% endif %}
-            Contact: {{ seller.contact if seller and seller.contact else "+91-8652369863" }}<br>
-            Email: {{ seller.email if seller and seller.email else "gksarvindkumar8652@gmail.com" }}
+            Contact: {{ seller.contact if seller and seller.contact else "+91-8652369813" }}<br>
+            Email: {{ seller.email if seller and seller.email else "mahindraprospares@gmail.com" }}
         </p>
     </div>
 

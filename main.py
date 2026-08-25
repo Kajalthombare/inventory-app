@@ -45,11 +45,11 @@ STORE_DETAILS = {
     "mahindra": {
         "name": "MAHINDRA PRO SPARES",
         "display_name": "Mahindra Pro Spares",
-        "address": "SHOP NO.01, CIDCO BUILDING,\nNEAR DEVANSHI HOTEL, TRUCK TERMINAL,\nKALAMBOLI, PANVEL, RAIGAD,\nMAHARASHTRA 410218",
+        "address": "At padeghar post, Kundewhal,\nnear JWR logistics, Ulwe,\nPanvel JNPT road, Panvel 410206",
         "pan": "BHIPM7720B",
         "gstin": "27BHIPM7720B1ZH",
-        "contact": "+91-8652369863",
-        "email": "gksarvindkumar8652@gmail.com"
+        "contact": "+91-8652369813",
+        "email": "mahindraprospares@gmail.com"
     },
     "divya": {
         "name": "DIVYA AUTOMOBILES",
