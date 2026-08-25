@@ -41,11 +41,37 @@ STORES = {
     "divya": "Divya Automobiles"
 }
 
+STORE_DETAILS = {
+    "mahindra": {
+        "name": "MAHINDRA PRO SPARES",
+        "display_name": "Mahindra Pro Spares",
+        "address": "SHOP NO.01, CIDCO BUILDING,\nNEAR DEVANSHI HOTEL, TRUCK TERMINAL,\nKALAMBOLI, PANVEL, RAIGAD,\nMAHARASHTRA 410218",
+        "pan": "BHIPM7720B",
+        "gstin": "27BHIPM7720B1ZH",
+        "contact": "+91-8652369863",
+        "email": "gksarvindkumar8652@gmail.com"
+    },
+    "divya": {
+        "name": "DIVYA AUTOMOBILES",
+        "display_name": "Divya Automobiles",
+        "address": "SHOP NO. 01, CIDCO BUILDING,\nNEAR DEVANSHI HOTEL, TRUCK TERMINAL\nKALAMBOLI, TALUKA PANVEL, RAIGAD\nMAHARASHTRA, 410218",
+        "pan": "BHIPM7720B",
+        "gstin": "27BHIPM7720B1ZH",
+        "contact": "+91-8652369813",
+        "email": "gksarvindkumar8652@gmail.com"
+    }
+}
+
 def get_active_store(request: Request) -> str:
     store = request.session.get("active_store")
     if store not in STORES:
         return "mahindra"
     return store
+
+def get_seller_info(request: Request, store_key: str = None) -> dict:
+    if not store_key:
+        store_key = get_active_store(request)
+    return STORE_DETAILS.get(store_key, STORE_DETAILS["mahindra"])
 
 @app.get("/select_store", response_class=HTMLResponse)
 def select_store_page(request: Request):
@@ -1907,6 +1933,7 @@ async def download_quotation_pdf(request: Request):
     env = Environment(loader=FileSystemLoader("templates"))
     template = env.get_template("quotation_pdf.html")
 
+    seller = get_seller_info(request)
     html = template.render(
         title="PROFORMA INVOICE",
         label="Proforma Invoice No:",
@@ -1922,7 +1949,8 @@ async def download_quotation_pdf(request: Request):
         buyer_address=customer_address,
         buyer_gstin=customer_gstin,
         buyer_mobile=customer_mobile,
-        buyer_email=customer_email
+        buyer_email=customer_email,
+        seller=seller
     )
     return HTMLResponse(content=html)
 
@@ -1931,11 +1959,13 @@ async def download_quotation_pdf(request: Request):
 def generate_single_doc_excel(
     title, doc_no_label, doc_no, date_val,
     buyer_name, buyer_address, buyer_gstin, buyer_mobile, buyer_email,
-    items, is_quotation
+    items, is_quotation, store_key=None
 ):
     from openpyxl import Workbook
     from openpyxl.styles import Font, Alignment, Border, Side, PatternFill
     from openpyxl.utils import get_column_letter
+
+    seller = STORE_DETAILS.get(store_key, STORE_DETAILS["mahindra"]) if store_key else STORE_DETAILS["mahindra"]
 
     wb = Workbook()
     ws = wb.active
@@ -1944,7 +1974,7 @@ def generate_single_doc_excel(
 
     # Colors and Fonts
     font_family = "Segoe UI"
-    color_primary = "1E40AF"  # Mahindra blue
+    color_primary = "1E40AF"  # Primary blue
     color_text = "1F2937"
     color_success = "15803D"
 
@@ -1966,19 +1996,21 @@ def generate_single_doc_excel(
     # Title Block
     ws.merge_cells("A1:G2")
     title_cell = ws["A1"]
-    title_cell.value = f"MAHINDRA PRO SPARES - {title}"
+    title_cell.value = f"{seller['name']} - {title}"
     title_cell.font = font_title
     title_cell.fill = fill_title
     title_cell.alignment = Alignment(horizontal="center", vertical="center")
 
     # Company Details & Meta Details
-    ws["A4"] = "MAHINDRA PRO SPARES"
+    ws["A4"] = seller['name']
     ws["A4"].font = font_bold
-    ws["A5"] = "SHOP NO.01, CIDCO BUILDING, NEAR DEVANSHI HOTEL,"
+    
+    addr_lines = seller['address'].split('\n')
+    ws["A5"] = addr_lines[0] if len(addr_lines) > 0 else seller['address']
     ws["A5"].font = font_regular
-    ws["A6"] = "TRUCK TERMINAL, KALAMBOLI, PANVEL, RAIGAD, MH 410218"
+    ws["A6"] = ", ".join(addr_lines[1:]) if len(addr_lines) > 1 else ""
     ws["A6"].font = font_regular
-    ws["A7"] = "GSTIN: 27BHIPM7720B1ZH | Contact: +91-8652369863"
+    ws["A7"] = f"GSTIN: {seller['gstin']} | Contact: {seller['contact']}"
     ws["A7"].font = font_regular
 
     ws["F4"] = f"{doc_no_label}:"
@@ -2140,10 +2172,10 @@ def safe_format_datetime(dt):
 
 
 @app.get("/view_quotation_saved/{q_id}", response_class=HTMLResponse)
-def view_quotation_saved(q_id: int):
+def view_quotation_saved(q_id: int, request: Request):
     db = SessionLocal()
     quotation = db.execute(text("""
-        SELECT id, quotation_no, customer_name, customer_address, customer_gstin, customer_mobile, customer_email, date
+        SELECT id, quotation_no, customer_name, customer_address, customer_gstin, customer_mobile, customer_email, date, store
         FROM quotations WHERE id = :id
     """), {"id": q_id}).fetchone()
     
@@ -2183,6 +2215,7 @@ def view_quotation_saved(q_id: int):
     env = Environment(loader=FileSystemLoader("templates"))
     template = env.get_template("quotation_pdf.html")
 
+    seller = get_seller_info(request, store_key=getattr(quotation, 'store', None))
     html = template.render(
         title="PROFORMA INVOICE",
         label="Proforma Invoice No:",
@@ -2198,16 +2231,17 @@ def view_quotation_saved(q_id: int):
         buyer_address=quotation.customer_address,
         buyer_gstin=quotation.customer_gstin,
         buyer_mobile=quotation.customer_mobile,
-        buyer_email=quotation.customer_email
+        buyer_email=quotation.customer_email,
+        seller=seller
     )
     return HTMLResponse(content=html)
 
 
 @app.get("/download_quotation_pdf_file/{q_id}")
-def download_quotation_pdf_file(q_id: int):
+def download_quotation_pdf_file(q_id: int, request: Request):
     db = SessionLocal()
     quotation = db.execute(text("""
-        SELECT id, quotation_no, customer_name, customer_address, customer_gstin, customer_mobile, customer_email, date
+        SELECT id, quotation_no, customer_name, customer_address, customer_gstin, customer_mobile, customer_email, date, store
         FROM quotations WHERE id = :id
     """), {"id": q_id}).fetchone()
     
@@ -2247,6 +2281,7 @@ def download_quotation_pdf_file(q_id: int):
     env = Environment(loader=FileSystemLoader("templates"))
     template = env.get_template("quotation_pdf.html")
 
+    seller = get_seller_info(request, store_key=getattr(quotation, 'store', None))
     html = template.render(
         title="PROFORMA INVOICE",
         label="Proforma Invoice No:",
@@ -2262,7 +2297,8 @@ def download_quotation_pdf_file(q_id: int):
         buyer_address=quotation.customer_address,
         buyer_gstin=quotation.customer_gstin,
         buyer_mobile=quotation.customer_mobile,
-        buyer_email=quotation.customer_email
+        buyer_email=quotation.customer_email,
+        seller=seller
     )
     
     try:
@@ -2317,7 +2353,7 @@ def send_smtp_email(to_email: str, subject: str, html_body: str, attachment_byte
 async def send_email_quotation(q_id: int, request: Request, email: str = Query(None)):
     db = SessionLocal()
     quotation = db.execute(text("""
-        SELECT id, quotation_no, customer_name, customer_address, customer_gstin, customer_mobile, customer_email, date
+        SELECT id, quotation_no, customer_name, customer_address, customer_gstin, customer_mobile, customer_email, date, store
         FROM quotations WHERE id = :id
     """), {"id": q_id}).fetchone()
     
@@ -2362,6 +2398,7 @@ async def send_email_quotation(q_id: int, request: Request, email: str = Query(N
     env = Environment(loader=FileSystemLoader("templates"))
     template = env.get_template("quotation_pdf.html")
 
+    seller = get_seller_info(request, store_key=getattr(quotation, 'store', None))
     html = template.render(
         title="PROFORMA INVOICE",
         label="Proforma Invoice No:",
@@ -2377,7 +2414,8 @@ async def send_email_quotation(q_id: int, request: Request, email: str = Query(N
         buyer_address=quotation.customer_address,
         buyer_gstin=quotation.customer_gstin,
         buyer_mobile=quotation.customer_mobile,
-        buyer_email=quotation.customer_email
+        buyer_email=quotation.customer_email,
+        seller=seller
     )
     
     # Try generating PDF to attach to email
@@ -2415,10 +2453,10 @@ async def send_email_quotation(q_id: int, request: Request, email: str = Query(N
 
 
 @app.get("/view_invoice_saved/{i_id}", response_class=HTMLResponse)
-def view_invoice_saved(i_id: int):
+def view_invoice_saved(i_id: int, request: Request):
     db = SessionLocal()
     invoice = db.execute(text("""
-        SELECT id, invoice_no, customer_name, customer_address, customer_gstin, customer_mobile, customer_email, date
+        SELECT id, invoice_no, customer_name, customer_address, customer_gstin, customer_mobile, customer_email, date, store
         FROM invoices WHERE id = :id
     """), {"id": i_id}).fetchone()
     
@@ -2459,6 +2497,7 @@ def view_invoice_saved(i_id: int):
     env = Environment(loader=FileSystemLoader("templates"))
     template = env.get_template("quotation_pdf.html")
 
+    seller = get_seller_info(request, store_key=getattr(invoice, 'store', None))
     html = template.render(
         title="TAX INVOICE",
         label="Invoice No:",
@@ -2474,7 +2513,8 @@ def view_invoice_saved(i_id: int):
         buyer_address=invoice.customer_address,
         buyer_gstin=invoice.customer_gstin,
         buyer_mobile=invoice.customer_mobile,
-        buyer_email=invoice.customer_email
+        buyer_email=invoice.customer_email,
+        seller=seller
     )
     return HTMLResponse(content=html)
 
@@ -2483,7 +2523,7 @@ def view_invoice_saved(i_id: int):
 def export_quotation_excel(q_id: int):
     db = SessionLocal()
     quotation = db.execute(text("""
-        SELECT id, quotation_no, customer_name, customer_address, customer_gstin, customer_mobile, customer_email, date
+        SELECT id, quotation_no, customer_name, customer_address, customer_gstin, customer_mobile, customer_email, date, store
         FROM quotations WHERE id = :id
     """), {"id": q_id}).fetchone()
     
@@ -2508,7 +2548,8 @@ def export_quotation_excel(q_id: int):
         buyer_mobile=quotation.customer_mobile,
         buyer_email=quotation.customer_email,
         items=items_rows,
-        is_quotation=True
+        is_quotation=True,
+        store_key=getattr(quotation, 'store', None)
     )
 
 
@@ -2516,7 +2557,7 @@ def export_quotation_excel(q_id: int):
 def export_invoice_excel(i_id: int):
     db = SessionLocal()
     invoice = db.execute(text("""
-        SELECT id, invoice_no, customer_name, customer_address, customer_gstin, customer_mobile, customer_email, date
+        SELECT id, invoice_no, customer_name, customer_address, customer_gstin, customer_mobile, customer_email, date, store
         FROM invoices WHERE id = :id
     """), {"id": i_id}).fetchone()
     
@@ -2557,7 +2598,8 @@ def export_invoice_excel(i_id: int):
         buyer_mobile=invoice.customer_mobile,
         buyer_email=invoice.customer_email,
         items=adapted_items,
-        is_quotation=False
+        is_quotation=False,
+        store_key=getattr(invoice, 'store', None)
     )
 
 
@@ -2706,9 +2748,11 @@ async def download_order_book_pdf(request: Request):
     env = Environment(loader=FileSystemLoader("templates"))
     template = env.get_template("order_book_pdf.html")
 
+    seller = get_seller_info(request)
     html = template.render(
         items=items,
-        date=date_str
+        date=date_str,
+        seller=seller
     )
     return HTMLResponse(content=html)
 
@@ -2745,19 +2789,21 @@ async def download_order_book_excel(request: Request):
     border_thin = Border(left=thin_border_side, right=thin_border_side, top=thin_border_side, bottom=thin_border_side)
 
     # Title Block
+    seller = get_seller_info(request)
     ws.merge_cells("A1:D2")
     title_cell = ws["A1"]
-    title_cell.value = "MAHINDRA PRO SPARES - ORDER BOOK"
+    title_cell.value = f"{seller['name']} - ORDER BOOK"
     title_cell.font = font_title
     title_cell.fill = fill_title
     title_cell.alignment = Alignment(horizontal="center", vertical="center")
 
     # Company Details & Meta Details
-    ws["A4"] = "MAHINDRA PRO SPARES"
+    ws["A4"] = seller['name']
     ws["A4"].font = font_bold
-    ws["A5"] = "SHOP NO.01, CIDCO BUILDING, NEAR DEVANSHI HOTEL,"
+    addr_lines = seller['address'].split('\n')
+    ws["A5"] = addr_lines[0] if len(addr_lines) > 0 else seller['address']
     ws["A5"].font = font_regular
-    ws["A6"] = "TRUCK TERMINAL, KALAMBOLI, PANVEL, RAIGAD, MH 410218"
+    ws["A6"] = ", ".join(addr_lines[1:]) if len(addr_lines) > 1 else ""
     ws["A6"].font = font_regular
 
     ws["C4"] = "Document Type:"
@@ -3064,6 +3110,7 @@ async def download_pdf(request: Request):
 
     savings = sum((it["rate"] * it["qty"]) - it["taxable"] for it in items)
 
+    seller = get_seller_info(request)
     html = template.render(
         title="TAX INVOICE",
         label="Invoice No:",
@@ -3079,7 +3126,8 @@ async def download_pdf(request: Request):
         buyer_address=customer_address,
         buyer_gstin=customer_gstin,
         buyer_mobile=customer_mobile,
-        buyer_email=customer_email
+        buyer_email=customer_email,
+        seller=seller
     )
 
     from fastapi.responses import HTMLResponse

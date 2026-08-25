@@ -2398,7 +2398,8 @@ function shareWhatsApp(mobile, quotationNo, id, grandTotal) {
     if (sanitizedPhone.length === 10) {
         sanitizedPhone = "91" + sanitizedPhone;
     }
-    let text = `Dear Customer,\n\nPlease find the Proforma Invoice *${quotationNo}* from *Mahindra Pro Spares* attached below.\n\n`;
+    const storeDisplayName = "{{ store_name_display }}";
+    let text = `Dear Customer,\n\nPlease find the Proforma Invoice *${quotationNo}* from *${storeDisplayName}* attached below.\n\n`;
     if (grandTotal && parseFloat(grandTotal) > 0) {
         text += `Grand Total: ₹ ${parseFloat(grandTotal).toLocaleString('en-IN', {minimumFractionDigits:2})}\n\n`;
     }
@@ -2417,8 +2418,9 @@ function shareEmail(email, quotationNo, id, grandTotal) {
         alert("Email address is required to share via Email.");
         return;
     }
-    const subject = `Proforma Invoice ${quotationNo} - Mahindra Pro Spares`;
-    let body = `Dear Customer,\n\nPlease find the Proforma Invoice ${quotationNo} from Mahindra Pro Spares attached below.\n\n`;
+    const storeDisplayName = "{{ store_name_display }}";
+    const subject = `Proforma Invoice ${quotationNo} - ${storeDisplayName}`;
+    let body = `Dear Customer,\n\nPlease find the Proforma Invoice ${quotationNo} from ${storeDisplayName} attached below.\n\n`;
     if (grandTotal && parseFloat(grandTotal) > 0) {
         body += `Grand Total: ₹ ${parseFloat(grandTotal).toLocaleString('en-IN', {minimumFractionDigits:2})}\n\n`;
     }

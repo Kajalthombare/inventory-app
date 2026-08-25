@@ -68,9 +68,9 @@
 <div class="row mb-3">
 
     <div class="col-7">
-        <div class="company">MAHINDRA PRO SPARES</div>
-        Panvel, Maharashtra<br>
-        GSTIN: 27BHIPM7720B1ZH
+        <div class="company">{{ seller.name if seller and seller.name else "MAHINDRA PRO SPARES" }}</div>
+        {{ (seller.address if seller and seller.address else "Panvel, Maharashtra").replace('\n', '<br>') | safe }}<br>
+        GSTIN: {{ seller.gstin if seller and seller.gstin else "27BHIPM7720B1ZH" }}
     </div>
 
     <div class="col-5 text-end">
