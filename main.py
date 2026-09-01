@@ -1381,8 +1381,15 @@ def get_rate(request: Request, part_no: str):
         hsn = str(item.hsn) if item else (product.hsn if product else "")
 
     out_of_stock_date = ""
-    if product and hasattr(product, 'out_of_stock_date') and product.out_of_stock_date:
-        out_of_stock_date = product.out_of_stock_date.strftime("%d-%b-%Y")
+    if product and stock == 0:
+        if hasattr(product, 'out_of_stock_date') and not product.out_of_stock_date:
+            product.out_of_stock_date = datetime.now()
+            try:
+                db.commit()
+            except Exception:
+                db.rollback()
+        if hasattr(product, 'out_of_stock_date') and product.out_of_stock_date:
+            out_of_stock_date = product.out_of_stock_date.strftime("%d-%b-%Y")
 
     db.close()
     return {"rate": rate, "description": description, "hsn": hsn, "stock": stock, "out_of_stock_date": out_of_stock_date}
@@ -2745,10 +2752,16 @@ def get_out_of_stock_products(request: Request):
     db = SessionLocal()
     products = db.query(Product).filter(Product.store == active_store, Product.quantity == 0).all()
     out = []
+    updated = False
+    now = datetime.now()
+
     for p in products:
-        d_str = ""
-        if hasattr(p, 'out_of_stock_date') and p.out_of_stock_date:
-            d_str = p.out_of_stock_date.strftime("%d-%b-%Y")
+        if hasattr(p, 'out_of_stock_date') and not p.out_of_stock_date:
+            p.out_of_stock_date = now
+            updated = True
+
+        d_str = p.out_of_stock_date.strftime("%d-%b-%Y") if (hasattr(p, 'out_of_stock_date') and p.out_of_stock_date) else now.strftime("%d-%b-%Y")
+
         out.append({
             "part_no": p.part_no,
             "description": p.description,
@@ -2756,6 +2769,13 @@ def get_out_of_stock_products(request: Request):
             "gst": p.gst or 18.0,
             "out_of_stock_date": d_str
         })
+
+    if updated:
+        try:
+            db.commit()
+        except Exception:
+            db.rollback()
+
     db.close()
     return out
 
