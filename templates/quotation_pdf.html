@@ -15,19 +15,23 @@ body {
 .header {
     display: flex;
     justify-content: space-between;
+    align-items: flex-start;
     border-bottom: 2px solid #000;
-    padding-bottom: 10px;
+    padding-bottom: 12px;
 }
 
 .company h2 {
-    margin: 0;
+    margin: 0 0 6px 0;
+    font-size: 20px;
     letter-spacing: 1px;
+    color: #1e293b;
 }
 
 .company p {
-    margin: 4px 0;
-    font-size: 13px;
-    color: #444;
+    margin: 3px 0;
+    font-size: 12px;
+    color: #475569;
+    line-height: 1.4;
 }
 
 .meta {
@@ -35,66 +39,79 @@ body {
 }
 
 .meta h1 {
-    margin: 0;
-    font-size: 22px;
-    letter-spacing: 2px;
+    margin: 0 0 6px 0;
+    font-size: 20px;
+    letter-spacing: 1.5px;
+    color: #0f172a;
 }
 
 .meta p {
-    margin-top: 10px;
-    font-size: 13px;
+    margin: 4px 0;
+    font-size: 12px;
+    color: #334155;
+    line-height: 1.5;
 }
 
 /* BUYER */
 .buyer {
-    margin-top: 20px;
-    padding: 10px;
-    background: #f5f5f5;
-    border-radius: 5px;
+    margin-top: 16px;
+    padding: 12px;
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 6px;
+    line-height: 1.5;
 }
 
 /* TABLE */
 table {
     width: 100%;
     border-collapse: collapse;
-    margin-top: 20px;
-    font-size: 14px;
+    margin-top: 18px;
+    font-size: 13px;
 }
 
 th {
-    background: #222;
+    background: #1e293b;
     color: #fff;
-    padding: 10px;
-    text-align: center;
+    padding: 9px 10px;
+    font-weight: 600;
 }
 
 td {
-    padding: 10px;
-    border-bottom: 1px solid #ddd;
+    padding: 9px 10px;
+    border-bottom: 1px solid #e2e8f0;
+    vertical-align: middle;
 }
 
 tr:nth-child(even) {
-    background: #fafafa;
+    background: #f8fafc;
 }
 
 .text-left { text-align: left; }
+.text-center { text-align: center; }
 .text-right { text-align: right; }
+.nowrap { white-space: nowrap; }
 
 /* TOTAL BOX */
 .total-box {
-    width: 300px;
+    width: 290px;
     margin-left: auto;
-    margin-top: 20px;
+    margin-top: 16px;
+}
+
+.total-box table {
+    margin-top: 0;
 }
 
 .total-box table td {
     border: none;
-    padding: 6px;
+    padding: 6px 10px;
 }
 
 .total-bold {
     font-weight: bold;
-    font-size: 15px;
+    font-size: 14px;
+    color: #0f172a;
 }
 
 /* FOOTER */
@@ -105,8 +122,17 @@ tr:nth-child(even) {
 }
 
 .signature {
-    margin-top: 50px;
+    margin-top: 40px;
     text-align: right;
+}
+
+@media print {
+    body {
+        margin: 15px;
+    }
+    .no-print, button {
+        display: none !important;
+    }
 }
 </style>
 
@@ -155,13 +181,13 @@ tr:nth-child(even) {
 <table>
     <thead>
         <tr>
-            <th>Sl</th>
-            <th>Description</th>
-            <th>HSN</th>
-            <th>Qty</th>
-            <th>Rate</th>
-            <th>Disc%</th>
-            <th>Amount</th>
+            <th class="text-center" style="width: 5%;">Sl</th>
+            <th class="text-left" style="width: 38%;">Description</th>
+            <th class="text-center" style="width: 12%;">HSN</th>
+            <th class="text-center" style="width: 8%;">Qty</th>
+            <th class="text-right" style="width: 14%;">Rate</th>
+            <th class="text-right" style="width: 9%;">Disc%</th>
+            <th class="text-right" style="width: 14%;">Amount</th>
         </tr>
     </thead>
 
@@ -179,9 +205,9 @@ tr:nth-child(even) {
 
             <td class="text-center">{{ item.hsn }}</td>
             <td class="text-center">{{ item.qty | int }}</td>
-            <td class="text-right">₹ {{ "%.2f"|format(item.rate) }}</td>
-            <td class="text-right">{{ item.discount }}%</td>
-            <td class="text-right">₹ {{ "%.2f"|format(item.taxable) }}</td>
+            <td class="text-right nowrap">₹ {{ "%.2f"|format(item.rate) }}</td>
+            <td class="text-right nowrap">{{ item.discount }}%</td>
+            <td class="text-right nowrap">₹ {{ "%.2f"|format(item.taxable) }}</td>
         </tr>
         {% endfor %}
     </tbody>
@@ -191,27 +217,25 @@ tr:nth-child(even) {
 <div class="total-box">
     <table>
         <tr>
-            <td>Subtotal</td>
-            <td class="text-right">₹ {{ "%.2f"|format(subtotal) }}</td>
+            <td class="text-left">Subtotal</td>
+            <td class="text-right nowrap">₹ {{ "%.2f"|format(subtotal) }}</td>
         </tr>
         <tr>
-            <td>CGST (9%)</td>
-            <td class="text-right">₹ {{ "%.2f"|format(cgst) }}</td>
+            <td class="text-left">CGST (9%)</td>
+            <td class="text-right nowrap">₹ {{ "%.2f"|format(cgst) }}</td>
         </tr>
         <tr>
-            <td>SGST (9%)</td>
-            <td class="text-right">₹ {{ "%.2f"|format(sgst) }}</td>
+            <td class="text-left">SGST (9%)</td>
+            <td class="text-right nowrap">₹ {{ "%.2f"|format(sgst) }}</td>
         </tr>
-        <tr style="border-top:2px solid black;">
-            <td class="total-bold">Grand Total</td>
-            <td class="text-right total-bold">
+        <tr style="border-top:2px solid #0f172a;">
+            <td class="text-left total-bold">Grand Total</td>
+            <td class="text-right total-bold nowrap">
                 ₹ {{ "%.2f"|format(total) }}
             </td>
         </tr>
     </table>
 </div>
-
-
 
 <!-- TERMS & CONDITIONS AND SIGNATURE -->
 <div style="margin-top: 30px; display: flex; justify-content: space-between; align-items: flex-start; page-break-inside: avoid;">
@@ -228,7 +252,7 @@ tr:nth-child(even) {
     </div>
 </div>
 
-<div style="margin-top:20px; text-align:center;">
+<div class="no-print" style="margin-top:20px; text-align:center;">
     <button onclick="window.print()" style="background:#1e40af;color:#fff;border:none;padding:10px 28px;border-radius:6px;font-size:14px;cursor:pointer;">🖨️ Print / Save as PDF</button>
 </div>
 
