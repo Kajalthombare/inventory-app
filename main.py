@@ -108,6 +108,15 @@ def auto_import_inventory():
                 except Exception:
                     db.rollback()
 
+            # Add out_of_stock_date to products table (supports PostgreSQL & SQLite)
+        for col_type in ["TIMESTAMP", "DATETIME", "VARCHAR(50)"]:
+            try:
+                db.execute(_text(f"ALTER TABLE products ADD COLUMN out_of_stock_date {col_type}"))
+                db.commit()
+                break
+            except Exception:
+                db.rollback()
+
         # Add purchase_rate to invoice_items
         try:
             db.execute(_text("ALTER TABLE invoice_items ADD COLUMN purchase_rate FLOAT DEFAULT 0.0"))
@@ -250,14 +259,16 @@ from database import Base, engine, SessionLocal
 
 Base.metadata.create_all(bind=engine)
 
-# Immediate migration for out_of_stock_date column
+# Immediate migration for out_of_stock_date column (supports PostgreSQL & SQLite)
 with SessionLocal() as _db_init:
-    try:
-        from sqlalchemy import text as _text
-        _db_init.execute(_text("ALTER TABLE products ADD COLUMN out_of_stock_date DATETIME"))
-        _db_init.commit()
-    except Exception:
-        _db_init.rollback()
+    from sqlalchemy import text as _text
+    for col_type in ["TIMESTAMP", "DATETIME", "VARCHAR(50)"]:
+        try:
+            _db_init.execute(_text(f"ALTER TABLE products ADD COLUMN out_of_stock_date {col_type}"))
+            _db_init.commit()
+            break
+        except Exception:
+            _db_init.rollback()
 
 # ---------------- MODELS ----------------
 
