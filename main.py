@@ -245,9 +245,19 @@ _jinja_env = Environment(
 def render(name: str, status_code: int = 200, **ctx) -> HTMLResponse:
     html = _jinja_env.get_template(name).render(**ctx)
     return HTMLResponse(content=html, status_code=status_code)
+
 from database import Base, engine, SessionLocal
 
 Base.metadata.create_all(bind=engine)
+
+# Immediate migration for out_of_stock_date column
+with SessionLocal() as _db_init:
+    try:
+        from sqlalchemy import text as _text
+        _db_init.execute(_text("ALTER TABLE products ADD COLUMN out_of_stock_date DATETIME"))
+        _db_init.commit()
+    except Exception:
+        _db_init.rollback()
 
 # ---------------- MODELS ----------------
 
@@ -264,6 +274,7 @@ class Product(Base):
     amount = Column(Float)
     location = Column(String(100), nullable=True, default="")
     store = Column(String(50), default="mahindra", index=True)
+    out_of_stock_date = Column(DateTime, nullable=True)
     vendor_name = Column(String(255), nullable=True)
     vendor_address = Column(String(255), nullable=True)
     vendor_mobile = Column(String(50), nullable=True)
@@ -1358,8 +1369,12 @@ def get_rate(request: Request, part_no: str):
         description = item.description if item else (product.description if product else "")
         hsn = str(item.hsn) if item else (product.hsn if product else "")
 
+    out_of_stock_date = ""
+    if product and hasattr(product, 'out_of_stock_date') and product.out_of_stock_date:
+        out_of_stock_date = product.out_of_stock_date.strftime("%d-%b-%Y")
+
     db.close()
-    return {"rate": rate, "description": description, "hsn": hsn, "stock": stock}
+    return {"rate": rate, "description": description, "hsn": hsn, "stock": stock, "out_of_stock_date": out_of_stock_date}
 
 
 # ---------------- PRICE MASTER (orders.csv) ----------------
@@ -2718,13 +2733,20 @@ def get_out_of_stock_products(request: Request):
     active_store = get_active_store(request)
     db = SessionLocal()
     products = db.query(Product).filter(Product.store == active_store, Product.quantity == 0).all()
+    out = []
+    for p in products:
+        d_str = ""
+        if hasattr(p, 'out_of_stock_date') and p.out_of_stock_date:
+            d_str = p.out_of_stock_date.strftime("%d-%b-%Y")
+        out.append({
+            "part_no": p.part_no,
+            "description": p.description,
+            "hsn": p.hsn,
+            "gst": p.gst or 18.0,
+            "out_of_stock_date": d_str
+        })
     db.close()
-    return [{
-        "part_no": p.part_no,
-        "description": p.description,
-        "hsn": p.hsn,
-        "gst": p.gst or 18.0
-    } for p in products]
+    return out
 
 
 @app.post("/download_order_book_pdf")
@@ -2732,7 +2754,7 @@ async def download_order_book_pdf(request: Request):
     data = await request.json()
     rows = data.get("rows", [])
     
-    # Exclude rates and discounts as requested. Just show sl, part_no, description, hsn, gst, qty
+    # Exclude rates and discounts as requested. Just show sl, part_no, description, hsn, out_of_stock_date, qty
     items = []
     for r in rows:
         items.append({
@@ -2740,7 +2762,8 @@ async def download_order_book_pdf(request: Request):
             "description": r.get("description", ""),
             "hsn": r.get("hsn", ""),
             "gst": r.get("gst", 18.0),
-            "qty": r.get("qty", 1)
+            "qty": r.get("qty", 1),
+            "out_of_stock_date": r.get("out_of_stock_date", "") or ""
         })
 
     date_str = datetime.now().strftime("%d-%b-%Y")
@@ -2773,7 +2796,7 @@ async def download_order_book_excel(request: Request):
 
     # Colors and Fonts
     font_family = "Segoe UI"
-    color_primary = "1E40AF"  # Mahindra blue
+    color_primary = "1E40AF"  # Primary blue
     color_text = "1F2937"
 
     font_title = Font(name=font_family, size=16, bold=True, color="FFFFFF")
@@ -2790,7 +2813,7 @@ async def download_order_book_excel(request: Request):
 
     # Title Block
     seller = get_seller_info(request)
-    ws.merge_cells("A1:D2")
+    ws.merge_cells("A1:E2")
     title_cell = ws["A1"]
     title_cell.value = f"{seller['name']} - ORDER BOOK"
     title_cell.font = font_title
@@ -2806,17 +2829,17 @@ async def download_order_book_excel(request: Request):
     ws["A6"] = ", ".join(addr_lines[1:]) if len(addr_lines) > 1 else ""
     ws["A6"].font = font_regular
 
-    ws["C4"] = "Document Type:"
-    ws["C4"].font = font_bold
-    ws["D4"] = "Order Book / Purchase Order"
-    ws["D4"].font = font_regular
-    ws["C5"] = "Date:"
-    ws["C5"].font = font_bold
-    ws["D5"] = datetime.now().strftime("%d-%b-%Y")
-    ws["D5"].font = font_regular
+    ws["D4"] = "Document Type:"
+    ws["D4"].font = font_bold
+    ws["E4"] = "Order Book / Purchase Order"
+    ws["E4"].font = font_regular
+    ws["D5"] = "Date:"
+    ws["D5"].font = font_bold
+    ws["E5"] = datetime.now().strftime("%d-%b-%Y")
+    ws["E5"].font = font_regular
 
     # Items Headers
-    headers = ["Sl", "Part No / Description", "HSN", "Order Qty"]
+    headers = ["Sl", "Part No / Description", "HSN", "Out of Stock Date", "Order Qty"]
     for col_idx, h in enumerate(headers, 1):
         cell = ws.cell(row=8, column=col_idx)
         cell.value = h
@@ -2837,9 +2860,10 @@ async def download_order_book_excel(request: Request):
         cell_desc.alignment = Alignment(wrap_text=True, vertical="center")
         
         ws.cell(row=row_idx, column=3, value=item.get("hsn", "") or "—").alignment = Alignment(horizontal="center")
-        ws.cell(row=row_idx, column=4, value=int(item.get("qty", 1))).alignment = Alignment(horizontal="center")
+        ws.cell(row=row_idx, column=4, value=item.get("out_of_stock_date", "") or "—").alignment = Alignment(horizontal="center")
+        ws.cell(row=row_idx, column=5, value=int(item.get("qty", 1))).alignment = Alignment(horizontal="center")
         
-        for c in range(1, 5):
+        for c in range(1, 6):
             cell = ws.cell(row=row_idx, column=c)
             cell.font = font_regular
             cell.border = border_thin
@@ -2859,11 +2883,11 @@ async def download_order_book_excel(request: Request):
 
     # Prepared By
     row_idx += 2
-    ws.cell(row=row_idx, column=3, value="Prepared By:").font = font_bold
-    ws.cell(row=row_idx, column=4, value="__________________").font = font_regular
+    ws.cell(row=row_idx, column=4, value="Prepared By:").font = font_bold
+    ws.cell(row=row_idx, column=5, value="__________________").font = font_regular
 
     # Set column widths
-    column_widths = [6, 45, 12, 14]
+    column_widths = [6, 45, 12, 18, 14]
     for i, w in enumerate(column_widths, 1):
         ws.column_dimensions[get_column_letter(i)].width = w
 

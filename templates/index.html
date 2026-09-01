@@ -1369,9 +1369,10 @@
                             <tr>
                                 <th>Part No</th>
                                 <th>Description</th>
-                                <th style="width:140px;">HSN</th>
-                                <th style="width:110px;">Order Qty</th>
-                                <th style="width:60px;"></th>
+                                <th style="width:120px;">HSN</th>
+                                <th style="width:150px;">Out of Stock Date</th>
+                                <th style="width:100px;">Order Qty</th>
+                                <th style="width:50px;"></th>
                             </tr>
                         </thead>
                         <tbody id="ob_body"></tbody>
@@ -2751,7 +2752,8 @@ async function refreshOrderBook() {
         description: p.description || '',
         hsn: p.hsn || '',
         gst: p.gst || 18.0,
-        qty: 1
+        qty: 1,
+        out_of_stock_date: p.out_of_stock_date || ''
     }));
     renderObRows();
 }
@@ -2762,7 +2764,7 @@ function renderObRows() {
         html += `<tr>
             <td style="position:relative;">
                 <input id="ob-inp-${i}" value="${r.part_no}"
-                    oninput="acSearch(this,document.getElementById('ob-ac-${i}'),d=>{obRows[${i}].part_no=d.part_no;obRows[${i}].description=d.description;obRows[${i}].hsn=d.hsn;obRows[${i}].gst=d.gst||18.0;renderObRows();})"
+                    oninput="acSearch(this,document.getElementById('ob-ac-${i}'),d=>{obRows[${i}].part_no=d.part_no;obRows[${i}].description=d.description;obRows[${i}].hsn=d.hsn;obRows[${i}].gst=d.gst||18.0;obRows[${i}].out_of_stock_date=d.out_of_stock_date||'';renderObRows();})"
                     onblur="obRows[${i}].part_no=this.value.trim().toUpperCase();this.value=obRows[${i}].part_no;if(obRows[${i}].part_no)fetchObDetails(${i});"
                     class="q-table-input" placeholder="Part No or search…">
                 <div id="ob-ac-${i}" class="ac-list"></div>
@@ -2776,6 +2778,11 @@ function renderObRows() {
                 <input type="text" value="${r.hsn}"
                     onchange="obRows[${i}].hsn = this.value; renderObRows();"
                     class="q-table-input" placeholder="HSN" style="width:100px;">
+            </td>
+            <td>
+                <input type="text" value="${r.out_of_stock_date || ''}"
+                    onchange="obRows[${i}].out_of_stock_date = this.value; renderObRows();"
+                    class="q-table-input" placeholder="Out of Stock Date" style="width:130px;">
             </td>
             <td>
                 <input type="number" value="${r.qty}" min="1"
@@ -2801,6 +2808,7 @@ async function fetchObDetails(i) {
         if (d.description || d.hsn) {
             if (d.description) obRows[i].description = d.description;
             if (d.hsn) obRows[i].hsn = d.hsn;
+            if (d.out_of_stock_date) obRows[i].out_of_stock_date = d.out_of_stock_date;
             renderObRows();
         } else if (!obRows[i].description) {
             // New item not found in DB & description is empty -> open New Item Modal
@@ -2813,7 +2821,7 @@ async function fetchObDetails(i) {
 
 function openObNewItemModal(rowIndex, partNo = '') {
     if (rowIndex >= obRows.length) {
-        obRows.push({ part_no: partNo, description: '', hsn: '', gst: 18.0, qty: 1 });
+        obRows.push({ part_no: partNo, description: '', hsn: '', gst: 18.0, qty: 1, out_of_stock_date: '' });
         rowIndex = obRows.length - 1;
     }
     document.getElementById('ob_modal_row_index').value = rowIndex;
@@ -2850,7 +2858,7 @@ async function saveObNewItem() {
         obRows[i].hsn = hsn;
         renderObRows();
     } else {
-        obRows.push({ part_no: pno, description: desc, hsn: hsn, gst: 18.0, qty: 1 });
+        obRows.push({ part_no: pno, description: desc, hsn: hsn, gst: 18.0, qty: 1, out_of_stock_date: '' });
         renderObRows();
     }
 
@@ -2869,7 +2877,7 @@ async function saveObNewItem() {
 }
 
 function addObRow() {
-    obRows.push({ part_no: '', description: '', hsn: '', gst: 18.0, qty: 1 });
+    obRows.push({ part_no: '', description: '', hsn: '', gst: 18.0, qty: 1, out_of_stock_date: '' });
     renderObRows();
 }
 

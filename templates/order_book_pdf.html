@@ -110,10 +110,11 @@ tr:nth-child(even) {
 <table>
     <thead>
         <tr>
-            <th class="text-center" style="width: 8%;">Sl</th>
-            <th class="text-left" style="width: 52%;">Part No / Description</th>
-            <th class="text-center" style="width: 20%;">HSN</th>
-            <th class="text-center" style="width: 20%;">Order Qty</th>
+            <th class="text-center" style="width: 6%;">Sl</th>
+            <th class="text-left" style="width: 44%;">Part No / Description</th>
+            <th class="text-center" style="width: 15%;">HSN</th>
+            <th class="text-center" style="width: 20%;">Out of Stock Date</th>
+            <th class="text-center" style="width: 15%;">Order Qty</th>
         </tr>
     </thead>
     <tbody>
@@ -125,6 +126,7 @@ tr:nth-child(even) {
                 {% if item.description %}<br><span style="font-size: 12px; color: #555;">{{ item.description }}</span>{% endif %}
             </td>
             <td class="text-center">{{ item.hsn or '—' }}</td>
+            <td class="text-center">{{ item.out_of_stock_date or '—' }}</td>
             <td class="text-center" style="font-weight: bold;">{{ item.qty | int }}</td>
         </tr>
         {% endfor %}
