@@ -240,8 +240,10 @@ def sync_order_csv_files(db, force=False):
         s = str(val).strip()
         return "" if s.lower() == "nan" else s
 
-    if force or oi_count < csv_count * 0.95 or oi_count != csv_count:
-        print(f"⏳ Syncing {len(csv_files)} CSV file(s) ({csv_count} total rows) into order_items ({oi_count} in DB)...")
+    nan_count = db.execute(text("SELECT COUNT(*) FROM order_items WHERE part_no = 'nan' OR description = 'nan' OR part_no IS NULL OR part_no = ''")).scalar() or 0
+
+    if force or oi_count < csv_count * 0.95 or oi_count != csv_count or nan_count > 0:
+        print(f"⏳ Syncing {len(csv_files)} CSV file(s) ({csv_count} total rows) into order_items ({oi_count} in DB, {nan_count} invalid)...")
         db.execute(text("DELETE FROM order_items"))
         db.commit()
         batch = []
