@@ -128,6 +128,19 @@ def auto_import_inventory():
             except Exception:
                 db.rollback()
 
+        # Add brand column to order_items and products
+        for tbl in ["order_items", "products"]:
+            try:
+                db.execute(_text(f"ALTER TABLE {tbl} ADD COLUMN brand VARCHAR(100) DEFAULT 'Mahindra'"))
+                db.commit()
+            except Exception:
+                db.rollback()
+            try:
+                db.execute(_text(f"UPDATE {tbl} SET brand = 'Mahindra' WHERE brand IS NULL OR brand = ''"))
+                db.commit()
+            except Exception:
+                db.rollback()
+
         for col, col_type in [
             ("vendor_name", "VARCHAR(255)"),
             ("vendor_address", "VARCHAR(255)"),
@@ -157,8 +170,8 @@ def auto_import_inventory():
                     amount   = ((qty * rate) - (qty * rate * discount / 100)) if qty > 0 else 0.0
                     loc = str(row.get("Location", row.get("location", "")) or "").strip()
                     db.execute(_text("""
-                        INSERT INTO products (part_no, description, hsn, gst, quantity, rate, discount, amount, location, store)
-                        VALUES (:pn, :desc, :hsn, :gst, :qty, :rate, :disc, :amt, :loc, 'mahindra')
+                        INSERT INTO products (part_no, description, hsn, gst, quantity, rate, discount, amount, location, store, brand)
+                        VALUES (:pn, :desc, :hsn, :gst, :qty, :rate, :disc, :amt, :loc, 'mahindra', 'Mahindra')
                     """), {
                         "pn":   str(row.get("Part No", "")).strip(),
                         "desc": str(row.get("Description", "")).strip(),
@@ -171,66 +184,117 @@ def auto_import_inventory():
                 db.commit()
                 print(f"✅ Auto-imported inventory.xlsx ({len(df)} products)")
 
-        # ── 2. Sync orders.csv → order_items table (always refresh on startup) ──
-        csv_path = os.path.join(os.path.dirname(__file__), "orders.csv")
-        if os.path.exists(csv_path):
-            oi_count = db.execute(_text("SELECT COUNT(*) FROM order_items")).scalar()
-            import pandas as pd
-            df_csv = pd.read_csv(csv_path, dtype=str, on_bad_lines="skip")
-            df_csv.columns = [col.strip() for col in df_csv.columns]
-            csv_count = len(df_csv)
-            # Only reimport if DB is out of sync with CSV (allows Render cold starts)
-            if oi_count < csv_count * 0.9:  # reimport if DB has <90% of CSV rows
-                print(f"⏳ Syncing orders.csv ({csv_count} rows) into order_items ({oi_count} in DB)...")
-                db.execute(_text("DELETE FROM order_items"))
-                db.commit()
-                batch = []
-                for _, row in df_csv.iterrows():
-                    part_no = str(row.get("Part No", "") or "").strip()
-                    if not part_no:
-                        continue
-                    batch.append({
-                        "pn":   part_no,
-                        "desc": str(row.get("Part Desc", "") or "").strip(),
-                        "hsn":  str(row.get("HSN", "") or "").strip(),
-                        "mrp":  float(row.get("MRP", 0) or 0)
-                    })
-                    if len(batch) >= 500:
-                        params = {}
-                        values_clauses = []
-                        for i, item in enumerate(batch):
-                            values_clauses.append(f"(:pn_{i}, :desc_{i}, :hsn_{i}, :mrp_{i}, 'mahindra')")
-                            params[f"pn_{i}"] = item["pn"]
-                            params[f"desc_{i}"] = item["desc"]
-                            params[f"hsn_{i}"] = item["hsn"]
-                            params[f"mrp_{i}"] = item["mrp"]
-                        sql = f"INSERT INTO order_items (part_no, description, hsn, mrp, store) VALUES {', '.join(values_clauses)}"
-                        db.execute(_text(sql), params)
-                        db.commit()
-                        batch = []
-                if batch:
-                    params = {}
-                    values_clauses = []
-                    for i, item in enumerate(batch):
-                        values_clauses.append(f"(:pn_{i}, :desc_{i}, :hsn_{i}, :mrp_{i}, 'mahindra')")
-                        params[f"pn_{i}"] = item["pn"]
-                        params[f"desc_{i}"] = item["desc"]
-                        params[f"hsn_{i}"] = item["hsn"]
-                        params[f"mrp_{i}"] = item["mrp"]
-                    sql = f"INSERT INTO order_items (part_no, description, hsn, mrp, store) VALUES {', '.join(values_clauses)}"
-                    db.execute(_text(sql), params)
-                    db.commit()
-                print(f"✅ Synced orders.csv ({csv_count} products into order_items)")
-            else:
-                print(f"✅ order_items up to date ({oi_count} rows)")
-        else:
-            print("⚠ orders.csv not found — skipping order_items sync")
+        # ── 2. Sync order*.csv / orders*.csv → order_items table ──
+        sync_order_csv_files(db)
 
     except Exception as e:
         print(f"⚠ Auto-import skipped: {e}")
         import traceback; traceback.print_exc()
     finally:
         db.close()
+
+
+def sync_order_csv_files(db, force=False):
+    """Sync all order*.csv and orders*.csv files into order_items table."""
+    import glob
+    app_dir = os.path.dirname(__file__)
+    csv_files = sorted(list(set(
+        glob.glob(os.path.join(app_dir, "order*.csv")) +
+        glob.glob(os.path.join(app_dir, "orders*.csv"))
+    )))
+    if not csv_files:
+        print("⚠ No order*.csv files found — skipping order_items sync")
+        return {"status": "warning", "message": "No CSV files found"}
+
+    oi_count = db.execute(_text("SELECT COUNT(*) FROM order_items")).scalar()
+    import pandas as pd
+    all_dfs = []
+    for cfile in csv_files:
+        try:
+            tdf = pd.read_csv(cfile, dtype=str, on_bad_lines="skip")
+            tdf.columns = [col.strip() for col in tdf.columns]
+            all_dfs.append(tdf)
+            print(f"📄 Found CSV file for import: {os.path.basename(cfile)} ({len(tdf)} rows)")
+        except Exception as ex:
+            print(f"⚠ Could not read {cfile}: {ex}")
+
+    if not all_dfs:
+        return {"status": "error", "message": "Could not read CSV files"}
+
+    df_csv = pd.concat(all_dfs, ignore_index=True)
+    csv_count = len(df_csv)
+
+    if force or oi_count < csv_count * 0.95 or oi_count != csv_count:
+        print(f"⏳ Syncing {len(csv_files)} CSV file(s) ({csv_count} total rows) into order_items ({oi_count} in DB)...")
+        db.execute(_text("DELETE FROM order_items"))
+        db.commit()
+        batch = []
+        for _, row in df_csv.iterrows():
+            part_no = str(
+                row.get("Part No") or row.get("Part number") or row.get("Part Number") or row.get("PART NO") or row.get("PART NUMBER") or row.get("part_no") or ""
+            ).strip()
+            if not part_no:
+                continue
+
+            desc = str(
+                row.get("Part Desc") or row.get("Part Description") or row.get("PART DESC") or row.get("PART DESCRIPTION") or row.get("Description") or row.get("description") or ""
+            ).strip()
+
+            hsn = str(
+                row.get("HSN") or row.get("HSN Code") or row.get("HSN CODE") or row.get("hsn") or ""
+            ).strip()
+
+            raw_mrp = row.get("MRP") or row.get("mrp") or row.get("Rate") or row.get("RATE") or row.get("Price") or row.get("PRICE") or 0
+            try:
+                mrp_val = float(str(raw_mrp).replace(",", "").strip() or 0)
+            except Exception:
+                mrp_val = 0.0
+
+            brand = str(
+                row.get("Brand") or row.get("BRAND") or row.get("brand") or row.get("Brand Name") or ""
+            ).strip() or "Mahindra"
+
+            batch.append({
+                "pn":   part_no,
+                "desc": desc,
+                "hsn":  hsn,
+                "mrp":  mrp_val,
+                "brand": brand
+            })
+            if len(batch) >= 500:
+                params = {}
+                values_clauses = []
+                for i, item in enumerate(batch):
+                    values_clauses.append(f"(:pn_{i}, :desc_{i}, :hsn_{i}, :mrp_{i}, 'mahindra', :brand_{i})")
+                    params[f"pn_{i}"] = item["pn"]
+                    params[f"desc_{i}"] = item["desc"]
+                    params[f"hsn_{i}"] = item["hsn"]
+                    params[f"mrp_{i}"] = item["mrp"]
+                    params[f"brand_{i}"] = item["brand"]
+                sql = f"INSERT INTO order_items (part_no, description, hsn, mrp, store, brand) VALUES {', '.join(values_clauses)}"
+                db.execute(_text(sql), params)
+                db.commit()
+                batch = []
+        if batch:
+            params = {}
+            values_clauses = []
+            for i, item in enumerate(batch):
+                values_clauses.append(f"(:pn_{i}, :desc_{i}, :hsn_{i}, :mrp_{i}, 'mahindra', :brand_{i})")
+                params[f"pn_{i}"] = item["pn"]
+                params[f"desc_{i}"] = item["desc"]
+                params[f"hsn_{i}"] = item["hsn"]
+                params[f"mrp_{i}"] = item["mrp"]
+                params[f"brand_{i}"] = item["brand"]
+            sql = f"INSERT INTO order_items (part_no, description, hsn, mrp, store, brand) VALUES {', '.join(values_clauses)}"
+            db.execute(_text(sql), params)
+            db.commit()
+        msg = f"✅ Synced {csv_count} products from {len(csv_files)} CSV files into order_items"
+        print(msg)
+        return {"status": "success", "message": msg, "count": csv_count}
+    else:
+        msg = f"✅ order_items up to date ({oi_count} rows)"
+        print(msg)
+        return {"status": "info", "message": msg, "count": oi_count}
 
 # ── Auth helper ──
 def get_current_user(request: Request):
@@ -269,6 +333,7 @@ class Product(Base):
     vendor_mobile = Column(String(50), nullable=True)
     vendor_gstin = Column(String(50), nullable=True)
     vendor_email = Column(String(255), nullable=True)
+    brand = Column(String(100), default="Mahindra")
 
 class Invoice(Base):
     __tablename__ = "invoices"
@@ -313,6 +378,7 @@ class OrderItems(Base):
     hsn = Column(String(50))
     mrp = Column(Float)
     store = Column(String(50), default="mahindra", index=True)
+    brand = Column(String(100), default="Mahindra")
 
 class Quotation(Base):
     __tablename__ = "quotations"
@@ -1366,57 +1432,11 @@ def get_rate(request: Request, part_no: str):
 
 @app.get("/reimport_orders")
 def reimport_orders(request: Request):
-    """Admin: reload all products from orders.csv into order_items"""
-    active_store = get_active_store(request)
+    """Admin: reload all products from order*.csv / orders*.csv into order_items"""
     db = SessionLocal()
     try:
-        csv_path = os.path.join(os.path.dirname(__file__), "orders.csv")
-        if not os.path.exists(csv_path):
-            return {"error": "orders.csv not found"}
-        df = pd.read_csv(csv_path, dtype=str, on_bad_lines="skip")
-        df.columns = [col.strip() for col in df.columns]
-        db.execute(text("DELETE FROM order_items WHERE store = :store"), {"store": active_store})
-        batch, inserted = [], 0
-        for _, row in df.iterrows():
-            part_no = str(row.get("Part No", "") or "").strip()
-            if not part_no:
-                continue
-            batch.append({
-                "pn":   part_no,
-                "desc": str(row.get("Part Desc", "") or "").strip(),
-                "hsn":  str(row.get("HSN", "") or "").strip(),
-                "mrp":  float(row.get("MRP", 0) or 0)
-            })
-            if len(batch) >= 500:
-                params = {"store": active_store}
-                values_clauses = []
-                for i, item in enumerate(batch):
-                    values_clauses.append(f"(:pn_{i}, :desc_{i}, :hsn_{i}, :mrp_{i}, :store)")
-                    params[f"pn_{i}"] = item["pn"]
-                    params[f"desc_{i}"] = item["desc"]
-                    params[f"hsn_{i}"] = item["hsn"]
-                    params[f"mrp_{i}"] = item["mrp"]
-                sql = f"INSERT INTO order_items (part_no, description, hsn, mrp, store) VALUES {', '.join(values_clauses)}"
-                db.execute(text(sql), params)
-                db.commit()
-                inserted += len(batch)
-                batch = []
-        if batch:
-            params = {"store": active_store}
-            values_clauses = []
-            for i, item in enumerate(batch):
-                values_clauses.append(f"(:pn_{i}, :desc_{i}, :hsn_{i}, :mrp_{i}, :store)")
-                params[f"pn_{i}"] = item["pn"]
-                params[f"desc_{i}"] = item["desc"]
-                params[f"hsn_{i}"] = item["hsn"]
-                params[f"mrp_{i}"] = item["mrp"]
-            sql = f"INSERT INTO order_items (part_no, description, hsn, mrp, store) VALUES {', '.join(values_clauses)}"
-            db.execute(text(sql), params)
-            db.commit()
-            inserted += len(batch)
-        return {"ok": True, "imported": inserted}
-    except Exception as e:
-        return {"error": str(e)}
+        res = sync_order_csv_files(db, force=True)
+        return res
     finally:
         db.close()
 
@@ -1427,14 +1447,14 @@ def search_parts(request: Request, q: str = ""):
     db = SessionLocal()
     q = q.strip().upper()
     results = db.execute(text("""
-        SELECT part_no, description, mrp, hsn
+        SELECT part_no, description, mrp, hsn, brand
         FROM order_items
         WHERE store = :store AND (UPPER(part_no) LIKE :q OR UPPER(description) LIKE :q)
         LIMIT 20
     """), {"q": f"%{q}%", "store": active_store}).fetchall()
     db.close()
     return [{"part_no": r.part_no, "description": r.description,
-             "rate": float(r.mrp or 0), "hsn": str(r.hsn or "")} for r in results]
+             "rate": float(r.mrp or 0), "hsn": str(r.hsn or ""), "brand": getattr(r, "brand", "Mahindra") or "Mahindra"} for r in results]
 
 @app.get("/search_vendors")
 def search_vendors(request: Request, q: str = ""):
@@ -1466,7 +1486,7 @@ def price_master_list(request: Request, page: int = 1, q: str = ""):
     offset = (page - 1) * per_page
     q_clean = f"%{q.strip().upper()}%"
     rows = db.execute(text("""
-        SELECT id, part_no, description, hsn, mrp
+        SELECT id, part_no, description, hsn, mrp, brand
         FROM order_items
         WHERE store = :store AND (UPPER(part_no) LIKE :q OR UPPER(description) LIKE :q)
         ORDER BY part_no
@@ -1479,7 +1499,7 @@ def price_master_list(request: Request, page: int = 1, q: str = ""):
     db.close()
     return {"total": total, "page": page, "per_page": per_page,
             "items": [{"id": r.id, "part_no": r.part_no, "description": r.description,
-                       "hsn": r.hsn, "mrp": float(r.mrp or 0)} for r in rows]}
+                       "hsn": r.hsn, "mrp": float(r.mrp or 0), "brand": getattr(r, "brand", "Mahindra") or "Mahindra"} for r in rows]}
 
 @app.post("/price_master/add")
 async def price_master_add(request: Request):
@@ -1494,6 +1514,7 @@ async def price_master_add(request: Request):
         part_no=data["part_no"].strip(),
         description=data.get("description", "").strip(),
         hsn=data.get("hsn", "").strip(),
+        brand=data.get("brand", "Mahindra").strip() or "Mahindra",
         mrp=float(data.get("mrp", 0)),
         store=active_store
     )
@@ -1510,6 +1531,7 @@ async def price_master_update(item_id: int, request: Request):
     if item:
         item.description = data.get("description", item.description)
         item.hsn = data.get("hsn", item.hsn)
+        item.brand = data.get("brand", getattr(item, "brand", "Mahindra"))
         item.mrp = float(data.get("mrp", item.mrp))
         db.commit()
     db.close()
@@ -3496,10 +3518,10 @@ def build_quotation():
 @app.post("/upload_order")
 def upload_order(file: UploadFile = File(...)):
 
-    if file.filename.endswith(".csv"):
-        df = pd.read_csv(file.file)
+    if file.filename.lower().endswith(".csv"):
+        df = pd.read_csv(file.file, dtype=str, on_bad_lines="skip")
     else:
-        df = pd.read_excel(file.file, engine="openpyxl")
+        df = pd.read_excel(file.file, engine="openpyxl", dtype=str)
 
     df.columns = [col.strip().upper() for col in df.columns]
 
@@ -3511,23 +3533,32 @@ def upload_order(file: UploadFile = File(...)):
 
     for _, row in df.iterrows():
 
-        part_no = str(row.get("PART NO", "")).strip()
+        part_no = str(row.get("PART NO") or row.get("PART NUMBER") or row.get("PART_NO") or "").strip()
         if not part_no:
             continue
 
-        mrp_val = float(str(row.get("MRP", 0)).replace(",", "") or 0)
+        raw_mrp = row.get("MRP") or row.get("RATE") or row.get("PRICE") or 0
+        try:
+            mrp_val = float(str(raw_mrp).replace(",", "").strip() or 0)
+        except Exception:
+            mrp_val = 0.0
+
+        brand = str(row.get("BRAND") or row.get("BRAND NAME") or "").strip() or "Mahindra"
+        desc = str(row.get("PART DESC") or row.get("PART DESCRIPTION") or row.get("DESCRIPTION") or "").strip()
+        hsn = str(row.get("HSN") or row.get("HSN CODE") or "").strip()
 
         db.execute(text("""
             INSERT INTO order_items (
-                part_no, description, mrp, hsn
+                part_no, description, mrp, hsn, store, brand
             ) VALUES (
-                :part_no, :description, :mrp, :hsn
+                :part_no, :description, :mrp, :hsn, 'mahindra', :brand
             )
         """), {
             "part_no": part_no,
-            "description": row.get("PART DESC", ""),
+            "description": desc,
             "mrp": mrp_val,
-            "hsn": row.get("HSN", "")
+            "hsn": hsn,
+            "brand": brand
         })
 
     db.commit()
@@ -3552,6 +3583,8 @@ def get_order_items(request: Request):
         result.append({
             "part_no": r.part_no,
             "description": r.description,
+            "hsn": getattr(r, "hsn", "") or "",
+            "brand": getattr(r, "brand", "Mahindra") or "Mahindra",
             "rate": r.mrp,
             "stock": stock.quantity if stock else 0,
             "qty": stock.quantity if stock else 0,   # ✅ real qty

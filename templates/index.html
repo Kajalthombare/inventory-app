@@ -1434,6 +1434,7 @@
                         <div class="form-field"><label>Part No</label><input id="pm-pno" class="form-input" placeholder="Part No"></div>
                         <div class="form-field" style="flex:2"><label>Description</label><input id="pm-desc" class="form-input" placeholder="Description"></div>
                         <div class="form-field"><label>HSN</label><input id="pm-hsn" class="form-input" placeholder="HSN"></div>
+                        <div class="form-field"><label>Brand</label><input id="pm-brand" class="form-input" placeholder="Mahindra" value="Mahindra"></div>
                         <div class="form-field"><label>Selling Rate (₹)</label><input id="pm-mrp" type="number" class="form-input" placeholder="0.00"></div>
                         <div class="form-field" style="justify-content:flex-end;">
                             <button onclick="addPMProduct()" class="btn btn-success">Save</button>
@@ -1448,7 +1449,7 @@
                 </div>
                 <div class="table-wrap">
                     <table class="data-table">
-                        <thead><tr><th>Part No</th><th>Description</th><th>HSN</th><th>Selling Rate (₹)</th><th>Actions</th></tr></thead>
+                        <thead><tr><th>Part No</th><th>Description</th><th>HSN</th><th>Brand</th><th>Selling Rate (₹)</th><th>Actions</th></tr></thead>
                         <tbody id="pm-body"></tbody>
                     </table>
                 </div>
@@ -2613,9 +2614,10 @@ async function fetchPM(){
             <td style="font-weight:600;">${it.part_no}</td>
             <td>${it.description||'—'}</td>
             <td>${it.hsn||'—'}</td>
+            <td><span class="badge" style="background:#eff6ff;color:#1d4ed8;padding:3px 10px;border-radius:12px;font-size:11px;font-weight:600;border:1px solid #bfdbfe;">${it.brand||'Mahindra'}</span></td>
             <td id="pm-rate-${it.id}">₹ ${it.mrp.toFixed(2)}</td>
             <td>
-                <button onclick="editPM(${it.id},'${it.description?.replace(/'/g,"\\'")}','${it.hsn||''}',${it.mrp})" class="btn btn-ghost btn-sm">✏️ Edit</button>
+                <button onclick="editPM(${it.id},'${it.description?.replace(/'/g,"\\'")}','${it.hsn||''}',${it.mrp},'${(it.brand||'Mahindra').replace(/'/g,"\\'")}')" class="btn btn-ghost btn-sm">✏️ Edit</button>
                 <button onclick="deletePM(${it.id})" class="btn btn-ghost btn-sm" style="color:var(--danger);">🗑</button>
             </td>
         </tr>`
@@ -2629,29 +2631,32 @@ function showAddPMForm(){ document.getElementById('pm-add-form').style.display='
 function hidePMForm(){
     document.getElementById('pm-add-form').style.display='none';
     ['pm-pno','pm-desc','pm-hsn','pm-mrp'].forEach(id=>document.getElementById(id).value='');
+    if (document.getElementById('pm-brand')) document.getElementById('pm-brand').value='Mahindra';
 }
 
 async function addPMProduct(){
     const pno = document.getElementById('pm-pno').value.trim();
     const desc = document.getElementById('pm-desc').value.trim();
     const hsn = document.getElementById('pm-hsn').value.trim();
+    const brand = document.getElementById('pm-brand')?.value.trim() || 'Mahindra';
     const mrp = parseFloat(document.getElementById('pm-mrp').value)||0;
     if (!pno){ alert('Part No is required'); return; }
     const res = await fetch('/price_master/add',{method:'POST',headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({part_no:pno,description:desc,hsn:hsn,mrp:mrp})});
+        body:JSON.stringify({part_no:pno,description:desc,hsn:hsn,brand:brand,mrp:mrp})});
     const data = await res.json();
     if (data.error){ alert(data.error); return; }
     hidePMForm(); await fetchPM();
 }
 
-async function editPM(id, desc, hsn, mrp){
+async function editPM(id, desc, hsn, mrp, brand){
     const newDesc = prompt('Description:', desc);
     if (newDesc===null) return;
+    const newBrand = prompt('Brand:', brand || 'Mahindra') || 'Mahindra';
     const newMRP = parseFloat(prompt('Selling Rate (₹):', mrp));
     if (isNaN(newMRP)) return;
     const newHSN = prompt('HSN:', hsn)||hsn;
     await fetch(`/price_master/update/${id}`,{method:'POST',headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({description:newDesc,hsn:newHSN,mrp:newMRP})});
+        body:JSON.stringify({description:newDesc,hsn:newHSN,brand:newBrand,mrp:newMRP})});
     await fetchPM();
 }
 
