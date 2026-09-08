@@ -131,12 +131,12 @@ def auto_import_inventory():
         # Add brand column to order_items and products
         for tbl in ["order_items", "products"]:
             try:
-                db.execute(_text(f"ALTER TABLE {tbl} ADD COLUMN brand VARCHAR(100) DEFAULT 'Mahindra'"))
+                db.execute(text(f"ALTER TABLE {tbl} ADD COLUMN brand VARCHAR(100) DEFAULT 'Mahindra'"))
                 db.commit()
             except Exception:
                 db.rollback()
             try:
-                db.execute(_text(f"UPDATE {tbl} SET brand = 'Mahindra' WHERE brand IS NULL OR brand = ''"))
+                db.execute(text(f"UPDATE {tbl} SET brand = 'Mahindra' WHERE brand IS NULL OR brand = ''"))
                 db.commit()
             except Exception:
                 db.rollback()
@@ -150,13 +150,13 @@ def auto_import_inventory():
             ("location", "VARCHAR(100)")
         ]:
             try:
-                db.execute(_text(f"ALTER TABLE products ADD COLUMN {col} {col_type}"))
+                db.execute(text(f"ALTER TABLE products ADD COLUMN {col} {col_type}"))
                 db.commit()
             except Exception:
                 db.rollback()
 
         # ── 1. Import inventory.xlsx → products table ──
-        count = db.execute(_text("SELECT COUNT(*) FROM products")).scalar()
+        count = db.execute(text("SELECT COUNT(*) FROM products")).scalar()
         if count == 0:
             xlsx_path = os.path.join(os.path.dirname(__file__), "inventory.xlsx")
             if os.path.exists(xlsx_path):
@@ -169,7 +169,7 @@ def auto_import_inventory():
                     discount = float(row.get("Discount", 0) or 0)
                     amount   = ((qty * rate) - (qty * rate * discount / 100)) if qty > 0 else 0.0
                     loc = str(row.get("Location", row.get("location", "")) or "").strip()
-                    db.execute(_text("""
+                    db.execute(text("""
                         INSERT INTO products (part_no, description, hsn, gst, quantity, rate, discount, amount, location, store, brand)
                         VALUES (:pn, :desc, :hsn, :gst, :qty, :rate, :disc, :amt, :loc, 'mahindra', 'Mahindra')
                     """), {
@@ -206,7 +206,7 @@ def sync_order_csv_files(db, force=False):
         print("⚠ No order*.csv files found — skipping order_items sync")
         return {"status": "warning", "message": "No CSV files found"}
 
-    oi_count = db.execute(_text("SELECT COUNT(*) FROM order_items")).scalar()
+    oi_count = db.execute(text("SELECT COUNT(*) FROM order_items")).scalar()
     import pandas as pd
     all_dfs = []
     for cfile in csv_files:
@@ -226,7 +226,7 @@ def sync_order_csv_files(db, force=False):
 
     if force or oi_count < csv_count * 0.95 or oi_count != csv_count:
         print(f"⏳ Syncing {len(csv_files)} CSV file(s) ({csv_count} total rows) into order_items ({oi_count} in DB)...")
-        db.execute(_text("DELETE FROM order_items"))
+        db.execute(text("DELETE FROM order_items"))
         db.commit()
         batch = []
         for _, row in df_csv.iterrows():
@@ -272,7 +272,7 @@ def sync_order_csv_files(db, force=False):
                     params[f"mrp_{i}"] = item["mrp"]
                     params[f"brand_{i}"] = item["brand"]
                 sql = f"INSERT INTO order_items (part_no, description, hsn, mrp, store, brand) VALUES {', '.join(values_clauses)}"
-                db.execute(_text(sql), params)
+                db.execute(text(sql), params)
                 db.commit()
                 batch = []
         if batch:
@@ -286,7 +286,7 @@ def sync_order_csv_files(db, force=False):
                 params[f"mrp_{i}"] = item["mrp"]
                 params[f"brand_{i}"] = item["brand"]
             sql = f"INSERT INTO order_items (part_no, description, hsn, mrp, store, brand) VALUES {', '.join(values_clauses)}"
-            db.execute(_text(sql), params)
+            db.execute(text(sql), params)
             db.commit()
         msg = f"✅ Synced {csv_count} products from {len(csv_files)} CSV files into order_items"
         print(msg)
