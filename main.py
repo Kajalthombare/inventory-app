@@ -220,6 +220,8 @@ def sync_order_csv_files(db, force=False):
     for cfile in csv_files:
         try:
             tdf = pd.read_csv(cfile, dtype=str, on_bad_lines="skip")
+            if len(tdf.columns) <= 1:
+                tdf = pd.read_csv(cfile, dtype=str, sep="\t", on_bad_lines="skip")
             tdf.columns = [col.strip() for col in tdf.columns]
             all_dfs.append(tdf)
             print(f"📄 Found CSV file for import: {os.path.basename(cfile)} ({len(tdf)} rows)")
