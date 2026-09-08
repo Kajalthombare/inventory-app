@@ -231,8 +231,14 @@ def sync_order_csv_files(db, force=False):
     if not all_dfs:
         return {"status": "error", "message": "Could not read CSV files"}
 
-    df_csv = pd.concat(all_dfs, ignore_index=True)
+    df_csv = pd.concat(all_dfs, ignore_index=True).fillna("")
     csv_count = len(df_csv)
+
+    def _clean(val):
+        if pd.isna(val) or val is None:
+            return ""
+        s = str(val).strip()
+        return "" if s.lower() == "nan" else s
 
     if force or oi_count < csv_count * 0.95 or oi_count != csv_count:
         print(f"⏳ Syncing {len(csv_files)} CSV file(s) ({csv_count} total rows) into order_items ({oi_count} in DB)...")
@@ -240,29 +246,31 @@ def sync_order_csv_files(db, force=False):
         db.commit()
         batch = []
         for _, row in df_csv.iterrows():
-            part_no = str(
-                row.get("Part No") or row.get("Part number") or row.get("Part Number") or row.get("PART NO") or row.get("PART NUMBER") or row.get("part_no") or ""
-            ).strip()
+            part_no = _clean(
+                row.get("Part No") or row.get("Part number") or row.get("Part Number") or row.get("PART NO") or row.get("PART NUMBER") or row.get("part_no")
+            )
             if not part_no:
                 continue
 
-            desc = str(
-                row.get("Part Desc") or row.get("Part Description") or row.get("PART DESC") or row.get("PART DESCRIPTION") or row.get("Description") or row.get("description") or ""
-            ).strip()
+            desc = _clean(
+                row.get("Part Desc") or row.get("Part Description") or row.get("PART DESC") or row.get("PART DESCRIPTION") or row.get("Description") or row.get("description")
+            )
 
-            hsn = str(
-                row.get("HSN") or row.get("HSN Code") or row.get("HSN CODE") or row.get("hsn") or ""
-            ).strip()
+            hsn = _clean(
+                row.get("HSN") or row.get("HSN Code") or row.get("HSN CODE") or row.get("hsn")
+            )
 
-            raw_mrp = row.get("MRP") or row.get("mrp") or row.get("Rate") or row.get("RATE") or row.get("Price") or row.get("PRICE") or 0
+            raw_mrp = _clean(
+                row.get("MRP") or row.get("mrp") or row.get("Rate") or row.get("RATE") or row.get("Price") or row.get("PRICE")
+            )
             try:
                 mrp_val = float(str(raw_mrp).replace(",", "").strip() or 0)
             except Exception:
                 mrp_val = 0.0
 
-            brand = str(
-                row.get("Brand") or row.get("BRAND") or row.get("brand") or row.get("Brand Name") or ""
-            ).strip() or "Mahindra"
+            brand = _clean(
+                row.get("Brand") or row.get("BRAND") or row.get("brand") or row.get("Brand Name")
+            ) or "Mahindra"
 
             batch.append({
                 "pn":   part_no,
