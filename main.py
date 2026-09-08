@@ -92,8 +92,6 @@ def switch_store(store_name: str, request: Request):
 def auto_import_inventory():
     db = SessionLocal()
     try:
-        from sqlalchemy import text as _text
-
         # ── 0. Run auto-migrations for invoices & quotations ──
         for table in ["invoices", "quotations"]:
             for col, col_type in [
@@ -103,14 +101,14 @@ def auto_import_inventory():
                 ("customer_email", "VARCHAR(255)")
             ]:
                 try:
-                    db.execute(_text(f"ALTER TABLE {table} ADD COLUMN {col} {col_type}"))
+                    db.execute(text(f"ALTER TABLE {table} ADD COLUMN {col} {col_type}"))
                     db.commit()
                 except Exception:
                     db.rollback()
 
         # Add purchase_rate to invoice_items
         try:
-            db.execute(_text("ALTER TABLE invoice_items ADD COLUMN purchase_rate FLOAT DEFAULT 0.0"))
+            db.execute(text("ALTER TABLE invoice_items ADD COLUMN purchase_rate FLOAT DEFAULT 0.0"))
             db.commit()
         except Exception:
             db.rollback()
@@ -118,12 +116,12 @@ def auto_import_inventory():
         # Add vendor details, location, and store column to products table & others
         for tbl in ["products", "invoices", "quotations", "purchases", "order_items", "vendors"]:
             try:
-                db.execute(_text(f"ALTER TABLE {tbl} ADD COLUMN store VARCHAR(50) DEFAULT 'mahindra'"))
+                db.execute(text(f"ALTER TABLE {tbl} ADD COLUMN store VARCHAR(50) DEFAULT 'mahindra'"))
                 db.commit()
             except Exception:
                 db.rollback()
             try:
-                db.execute(_text(f"UPDATE {tbl} SET store = 'mahindra' WHERE store IS NULL OR store = ''"))
+                db.execute(text(f"UPDATE {tbl} SET store = 'mahindra' WHERE store IS NULL OR store = ''"))
                 db.commit()
             except Exception:
                 db.rollback()
@@ -184,8 +182,18 @@ def auto_import_inventory():
                 db.commit()
                 print(f"✅ Auto-imported inventory.xlsx ({len(df)} products)")
 
-        # ── 2. Sync order*.csv / orders*.csv → order_items table ──
-        sync_order_csv_files(db)
+        # ── 2. Sync order*.csv / orders*.csv → order_items table in background thread ──
+        import threading
+        def _bg_sync():
+            bg_db = SessionLocal()
+            try:
+                sync_order_csv_files(bg_db)
+            except Exception as ex:
+                print(f"⚠ Background sync error: {ex}")
+            finally:
+                bg_db.close()
+
+        threading.Thread(target=_bg_sync, daemon=True).start()
 
     except Exception as e:
         print(f"⚠ Auto-import skipped: {e}")
