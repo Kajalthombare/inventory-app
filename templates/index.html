@@ -2628,8 +2628,8 @@ async function fetchPM(){
         `<tr id="pm-row-${it.id}">
             <td style="font-weight:600;">${it.part_no}</td>
             <td>${it.description||'—'}</td>
-            <td>${it.hsn||'—'}</td>
             <td><span class="badge" style="background:#eff6ff;color:#1d4ed8;padding:3px 10px;border-radius:12px;font-size:11px;font-weight:600;border:1px solid #bfdbfe;">${it.brand||'Mahindra'}</span></td>
+            <td>${it.hsn||'—'}</td>
             <td id="pm-rate-${it.id}">₹ ${it.mrp.toFixed(2)}</td>
             <td>
                 <button onclick="editPM(${it.id},'${it.description?.replace(/'/g,"\\'")}','${it.hsn||''}',${it.mrp},'${(it.brand||'Mahindra').replace(/'/g,"\\'")}')" class="btn btn-ghost btn-sm">✏️ Edit</button>
