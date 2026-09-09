@@ -93,6 +93,7 @@
         <tr>
             <th>Sl No</th>
             <th>Description</th>
+            <th>Make</th>
             <th>HSN</th>
             <th>GST %</th>
             <th>Qty</th>
@@ -112,6 +113,7 @@
                 {{ item.description }}
             </td>
 
+            <td>{{ item.make or item.brand or 'Mahindra' }}</td>
             <td>{{ item.hsn }}</td>
             <td>18%</td>
             <td>{{ item.qty }}</td>

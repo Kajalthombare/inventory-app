@@ -182,11 +182,12 @@ tr:nth-child(even) {
     <thead>
         <tr>
             <th class="text-center" style="width: 5%;">Sl</th>
-            <th class="text-left" style="width: 38%;">Description</th>
-            <th class="text-center" style="width: 12%;">HSN</th>
-            <th class="text-center" style="width: 8%;">Qty</th>
-            <th class="text-right" style="width: 14%;">Rate</th>
-            <th class="text-right" style="width: 9%;">Disc%</th>
+            <th class="text-left" style="width: 32%;">Description</th>
+            <th class="text-center" style="width: 12%;">Make</th>
+            <th class="text-center" style="width: 10%;">HSN</th>
+            <th class="text-center" style="width: 7%;">Qty</th>
+            <th class="text-right" style="width: 12%;">Rate</th>
+            <th class="text-right" style="width: 8%;">Disc%</th>
             <th class="text-right" style="width: 14%;">Amount</th>
         </tr>
     </thead>
@@ -203,6 +204,7 @@ tr:nth-child(even) {
                 </span>
             </td>
 
+            <td class="text-center">{{ item.make or item.brand or 'Mahindra' }}</td>
             <td class="text-center">{{ item.hsn }}</td>
             <td class="text-center">{{ item.qty | int }}</td>
             <td class="text-right nowrap">₹ {{ "%.2f"|format(item.rate) }}</td>

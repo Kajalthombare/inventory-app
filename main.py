@@ -126,8 +126,8 @@ def auto_import_inventory():
             except Exception:
                 db.rollback()
 
-        # Add brand column to order_items and products
-        for tbl in ["order_items", "products"]:
+        # Add brand column to order_items, products, invoice_items, quotation_items, purchases
+        for tbl in ["order_items", "products", "invoice_items", "quotation_items", "purchases"]:
             try:
                 db.execute(text(f"ALTER TABLE {tbl} ADD COLUMN brand VARCHAR(100) DEFAULT 'Mahindra'"))
                 db.commit()
@@ -138,6 +138,19 @@ def auto_import_inventory():
                 db.commit()
             except Exception:
                 db.rollback()
+
+        # Add out_of_stock_date to products table
+        try:
+            db.execute(text("ALTER TABLE products ADD COLUMN out_of_stock_date TIMESTAMP"))
+            db.commit()
+        except Exception:
+            db.rollback()
+
+        try:
+            db.execute(text("UPDATE products SET out_of_stock_date = CURRENT_TIMESTAMP WHERE quantity = 0 AND out_of_stock_date IS NULL"))
+            db.commit()
+        except Exception:
+            db.rollback()
 
         for col, col_type in [
             ("vendor_name", "VARCHAR(255)"),
@@ -354,6 +367,7 @@ class Product(Base):
     vendor_gstin = Column(String(50), nullable=True)
     vendor_email = Column(String(255), nullable=True)
     brand = Column(String(100), default="Mahindra")
+    out_of_stock_date = Column(DateTime, nullable=True)
 
 class Invoice(Base):
     __tablename__ = "invoices"
@@ -388,6 +402,7 @@ class InvoiceItem(Base):
 
     hsn = Column(String(50))
     purchase_rate = Column(Float, default=0.0)
+    brand = Column(String(100), default="Mahindra")
 
 class OrderItems(Base):
     __tablename__ = "order_items"
@@ -425,6 +440,7 @@ class QuotationItem(Base):
     discount = Column(Float)
     amount = Column(Float)
     hsn = Column(String(50), default="")
+    brand = Column(String(100), default="Mahindra")
 
 class Vendor(Base):
     __tablename__ = "vendors"
@@ -449,6 +465,7 @@ class Purchase(Base):
     amount = Column(Float)
     date = Column(DateTime, default=datetime.utcnow)
     store = Column(String(50), default="mahindra", index=True)
+    brand = Column(String(100), default="Mahindra")
 
 Base.metadata.create_all(bind=engine)
 
@@ -788,6 +805,7 @@ def upload_stock(request: Request, file: UploadFile = File(...), mode: str = For
             except (ValueError, TypeError):
                 discount = 0.0
 
+            brand = str(row.get("BRAND", row.get("MAKE", row.get("BRAND NAME", "")))).strip()
             vendor_name = str(row.get("VENDOR NAME", row.get("VENDOR", ""))).strip()
             vendor_address = str(row.get("VENDOR ADDRESS", row.get("ADDRESS", ""))).strip()
             vendor_mobile = str(row.get("VENDOR MOBILE", row.get("MOBILE", ""))).strip()
@@ -803,11 +821,22 @@ def upload_stock(request: Request, file: UploadFile = File(...), mode: str = For
 
             if existing:
                 existing.quantity += qty
+                if brand:
+                    existing.brand = brand
                 if rate > 0:
                     existing.rate = rate
                 if discount > 0:
                     existing.discount = discount
-                existing.amount = (existing.quantity * existing.rate) - ((existing.quantity * existing.rate) * (existing.discount / 100))
+                
+                if existing.quantity <= 0:
+                    existing.quantity = 0
+                    existing.amount = 0
+                    if not existing.out_of_stock_date:
+                        existing.out_of_stock_date = datetime.utcnow()
+                else:
+                    existing.out_of_stock_date = None
+                    existing.amount = (existing.quantity * existing.rate) - ((existing.quantity * existing.rate) * (existing.discount / 100))
+
                 if location:
                     existing.location = location
                 if vendor_name:
@@ -830,6 +859,8 @@ def upload_stock(request: Request, file: UploadFile = File(...), mode: str = For
                     rate=rate,
                     discount=discount,
                     amount=round(amount, 2),
+                    brand=brand or ("Leypart" if active_store == "leypart" else "Mahindra"),
+                    out_of_stock_date=datetime.utcnow() if qty <= 0 else None,
                     location=location,
                     store=active_store,
                     vendor_name=vendor_name,
@@ -900,7 +931,7 @@ def export_stock_excel(request: Request, q: str = Query("")):
         header_align = Alignment(horizontal="center", vertical="center", wrap_text=True)
 
         headers = [
-            "Part No", "Description", "HSN", "GST %", 
+            "Part No", "Description", "Make", "HSN", "GST %", 
             "Quantity", "Stock Status", "Purchase Rate (₹)", 
             "Discount %", "Taxable Amount (₹)", "Store Location", "Vendor Name"
         ]
@@ -930,6 +961,7 @@ def export_stock_excel(request: Request, q: str = Query("")):
             rate = float(p.rate or 0.0)
             discount = float(p.discount or 0.0)
             amt = float(p.amount or 0.0)
+            make_val = p.brand or ("Leypart" if active_store == "leypart" else "Mahindra")
             if qty <= 0:
                 amt = 0.0
                 status = "Out of Stock"
@@ -948,6 +980,7 @@ def export_stock_excel(request: Request, q: str = Query("")):
             row_data = [
                 p.part_no or "",
                 p.description or "",
+                make_val,
                 p.hsn or "",
                 f"{p.gst or 18}%",
                 qty,
@@ -1028,8 +1061,12 @@ def add_stock(id: int, qty: int = Form(...)):
     product.quantity += qty
 
     if product.quantity <= 0:
+        product.quantity = 0
         product.amount = 0
+        if not product.out_of_stock_date:
+            product.out_of_stock_date = datetime.utcnow()
     else:
+        product.out_of_stock_date = None
         product.amount = (product.quantity * (product.rate or 0)) - (
             (product.quantity * (product.rate or 0)) * ((product.discount or 0) / 100)
         )
@@ -1056,11 +1093,14 @@ def issue_stock(id: int, qty: int = Form(...)):
     # ✅ STEP 1: Reduce stock
     product.quantity -= qty
 
-    # ✅ STEP 2: Recalculate amount
+    # ✅ STEP 2: Recalculate amount & out of stock date
     if product.quantity <= 0:
         product.quantity = 0
         product.amount = 0
+        if not product.out_of_stock_date:
+            product.out_of_stock_date = datetime.utcnow()
     else:
+        product.out_of_stock_date = None
         product.amount = (product.quantity * (product.rate or 0)) - (
             (product.quantity * (product.rate or 0)) * ((product.discount or 0) / 100)
         )
@@ -1081,6 +1121,7 @@ def add_product(
     quantity: int = Form(...),
     rate: float = Form(...),
     discount: float = Form(0),
+    brand: str = Form(None),
     location: str = Form(None),
     vendor_name: str = Form(None),
     vendor_address: str = Form(None),
@@ -1096,6 +1137,8 @@ def add_product(
         price = db.query(OrderItems).filter(OrderItems.part_no == part_no, OrderItems.store == active_store).first()
         if price and price.mrp > 0:
             rate = price.mrp
+
+    selected_brand = brand.strip() if (brand and brand.strip()) else ("Leypart" if active_store == "leypart" else "Mahindra")
 
     # 1. Save or Update Vendor details if vendor_name is provided
     if vendor_name and vendor_name.strip():
@@ -1135,7 +1178,8 @@ def add_product(
             discount=discount,
             amount=round(purchase_amt, 2),
             date=datetime.now(),
-            store=active_store
+            store=active_store,
+            brand=selected_brand
         )
         db.add(new_purchase)
 
@@ -1144,16 +1188,21 @@ def add_product(
 
     if existing:
         existing.quantity += quantity
+        if brand and brand.strip():
+            existing.brand = brand.strip()
 
         # update rate if valid
         if rate > 0:
             existing.rate = rate
 
-        # calculate amount
+        # calculate amount & out of stock date
         if existing.quantity <= 0:
             existing.quantity = 0
             existing.amount = 0
+            if not existing.out_of_stock_date:
+                existing.out_of_stock_date = datetime.utcnow()
         else:
+            existing.out_of_stock_date = None
             existing.amount = (existing.quantity * existing.rate) - (
                 (existing.quantity * existing.rate) * (existing.discount / 100)
             )
@@ -1186,6 +1235,8 @@ def add_product(
             rate=rate,
             discount=discount,
             amount=amount,
+            brand=selected_brand,
+            out_of_stock_date=datetime.utcnow() if quantity <= 0 else None,
             location=location.strip() if (location and location.strip()) else "",
             store=active_store,
             vendor_name=vendor_name.strip() if (vendor_name and vendor_name.strip()) else "",
@@ -1250,6 +1301,7 @@ async def add_purchase_bill(request: Request):
         qty = int(item.get("qty", 0) or 0)
         rate = float(item.get("rate", 0.0) or 0.0)
         discount = float(item.get("discount", 0.0) or 0.0)
+        item_brand = item.get("brand") or item.get("make") or ("Leypart" if active_store == "leypart" else "Mahindra")
         
         if not part_no:
             continue
@@ -1273,7 +1325,8 @@ async def add_purchase_bill(request: Request):
                 discount=discount,
                 amount=round(purchase_amt, 2),
                 date=datetime.now(),
-                store=active_store
+                store=active_store,
+                brand=item_brand
             )
             db.add(new_purchase)
             
@@ -1282,6 +1335,7 @@ async def add_purchase_bill(request: Request):
         item_loc = str(item.get("location", "") or "").strip()
         if existing:
             existing.quantity += qty
+            existing.brand = item_brand
             if rate > 0:
                 existing.rate = rate
             if description:
@@ -1293,11 +1347,14 @@ async def add_purchase_bill(request: Request):
             if item_loc:
                 existing.location = item_loc
             
-            # Recalculate amount
+            # Recalculate amount & out of stock date
             if existing.quantity <= 0:
                 existing.quantity = 0
                 existing.amount = 0
+                if not existing.out_of_stock_date:
+                    existing.out_of_stock_date = datetime.utcnow()
             else:
+                existing.out_of_stock_date = None
                 existing.amount = (existing.quantity * existing.rate) - (
                     (existing.quantity * existing.rate) * (existing.discount / 100)
                 )
@@ -1325,6 +1382,8 @@ async def add_purchase_bill(request: Request):
                 rate=rate,
                 discount=discount,
                 amount=round(amount, 2),
+                brand=item_brand,
+                out_of_stock_date=datetime.utcnow() if qty <= 0 else None,
                 location=item_loc,
                 store=active_store,
                 vendor_name=vendor_name,
@@ -1363,13 +1422,14 @@ def get_price(request: Request, part_no: str):
         hsn = prod.hsn or (price.hsn if price else "")
     else:
         rate = float(price.mrp) if (price and price.mrp) else (float(prod.rate) if (prod and prod.rate) else 0.0)
-        description = price.description if price else (prod.description if prod else "")
-        hsn = price.hsn if price else (prod.hsn if prod else "")
+    brand = prod.brand if (prod and prod.brand) else (price.brand if (price and getattr(price, "brand", None)) else ("Leypart" if active_store == "leypart" else "Mahindra"))
 
     return {
         "rate": rate,
         "hsn": hsn,
         "description": description,
+        "brand": brand,
+        "make": brand,
         "location": prod.location if (prod and prod.location) else "",
         "vendor_name": prod.vendor_name if prod else "",
         "vendor_address": prod.vendor_address if prod else "",
@@ -1431,7 +1491,7 @@ def get_rate(request: Request, part_no: str):
 
     # Step 2: Check order_items (price master) as fallback
     item = db.execute(
-        text("SELECT mrp, description, hsn FROM order_items WHERE part_no = :p AND store = :store"),
+        text("SELECT mrp, description, hsn, brand FROM order_items WHERE part_no = :p AND store = :store"),
         {"p": part_no, "store": active_store}
     ).fetchone()
 
@@ -1444,8 +1504,10 @@ def get_rate(request: Request, part_no: str):
         description = item.description if item else (product.description if product else "")
         hsn = str(item.hsn) if item else (product.hsn if product else "")
 
+    brand = product.brand if (product and product.brand) else (item.brand if (item and getattr(item, "brand", None)) else ("Leypart" if active_store == "leypart" else "Mahindra"))
+
     db.close()
-    return {"rate": rate, "description": description, "hsn": hsn, "stock": stock}
+    return {"rate": rate, "description": description, "hsn": hsn, "stock": stock, "brand": brand, "make": brand}
 
 
 # ---------------- PRICE MASTER (orders.csv) ----------------
@@ -1474,7 +1536,9 @@ def search_parts(request: Request, q: str = ""):
     """), {"q": f"%{q}%", "store": active_store}).fetchall()
     db.close()
     return [{"part_no": r.part_no, "description": r.description,
-             "rate": float(r.mrp or 0), "hsn": str(r.hsn or ""), "brand": getattr(r, "brand", "Mahindra") or "Mahindra"} for r in results]
+             "rate": float(r.mrp or 0), "hsn": str(r.hsn or ""),
+             "brand": getattr(r, "brand", "Mahindra") or "Mahindra",
+             "make": getattr(r, "brand", "Mahindra") or "Mahindra"} for r in results]
 
 @app.get("/search_vendors")
 def search_vendors(request: Request, q: str = ""):
@@ -2760,27 +2824,44 @@ def get_out_of_stock_products(request: Request):
     active_store = get_active_store(request)
     db = SessionLocal()
     products = db.query(Product).filter(Product.store == active_store, Product.quantity == 0).all()
+    
+    result = []
+    for p in products:
+        if not p.out_of_stock_date:
+            p.out_of_stock_date = datetime.utcnow()
+            db.commit()
+        
+        default_brand = p.brand or ("Leypart" if active_store == "leypart" else "Mahindra")
+        result.append({
+            "part_no": p.part_no,
+            "description": p.description,
+            "hsn": p.hsn,
+            "gst": p.gst or 18.0,
+            "brand": default_brand,
+            "make": default_brand,
+            "out_of_stock_date": p.out_of_stock_date.strftime("%d-%b-%Y") if p.out_of_stock_date else ""
+        })
     db.close()
-    return [{
-        "part_no": p.part_no,
-        "description": p.description,
-        "hsn": p.hsn,
-        "gst": p.gst or 18.0
-    } for p in products]
+    return result
 
 
 @app.post("/download_order_book_pdf")
 async def download_order_book_pdf(request: Request):
     data = await request.json()
     rows = data.get("rows", [])
+    active_store = get_active_store(request)
     
-    # Exclude rates and discounts as requested. Just show sl, part_no, description, hsn, gst, qty
+    # Exclude rates and discounts as requested. Show sl, part_no, description, make, hsn, out_of_stock_date, qty
     items = []
     for r in rows:
+        default_make = r.get("make") or r.get("brand") or ("Leypart" if active_store == "leypart" else "Mahindra")
         items.append({
             "part_no": r.get("part_no", ""),
             "description": r.get("description", ""),
+            "make": default_make,
+            "brand": default_make,
             "hsn": r.get("hsn", ""),
+            "out_of_stock_date": r.get("out_of_stock_date", ""),
             "gst": r.get("gst", 18.0),
             "qty": r.get("qty", 1)
         })
@@ -2803,6 +2884,7 @@ async def download_order_book_pdf(request: Request):
 async def download_order_book_excel(request: Request):
     data = await request.json()
     rows = data.get("rows", [])
+    active_store = get_active_store(request)
     
     from openpyxl import Workbook
     from openpyxl.styles import Font, Alignment, Border, Side, PatternFill
@@ -2832,7 +2914,7 @@ async def download_order_book_excel(request: Request):
 
     # Title Block
     seller = get_seller_info(request)
-    ws.merge_cells("A1:D2")
+    ws.merge_cells("A1:F2")
     title_cell = ws["A1"]
     title_cell.value = f"{seller['name']} - ORDER BOOK"
     title_cell.font = font_title
@@ -2848,17 +2930,17 @@ async def download_order_book_excel(request: Request):
     ws["A6"] = ", ".join(addr_lines[1:]) if len(addr_lines) > 1 else ""
     ws["A6"].font = font_regular
 
-    ws["C4"] = "Document Type:"
-    ws["C4"].font = font_bold
-    ws["D4"] = "Order Book / Purchase Order"
-    ws["D4"].font = font_regular
-    ws["C5"] = "Date:"
-    ws["C5"].font = font_bold
-    ws["D5"] = datetime.now().strftime("%d-%b-%Y")
-    ws["D5"].font = font_regular
+    ws["E4"] = "Document Type:"
+    ws["E4"].font = font_bold
+    ws["F4"] = "Order Book / Purchase Order"
+    ws["F4"].font = font_regular
+    ws["E5"] = "Date:"
+    ws["E5"].font = font_bold
+    ws["F5"] = datetime.now().strftime("%d-%b-%Y")
+    ws["F5"].font = font_regular
 
     # Items Headers
-    headers = ["Sl", "Part No / Description", "HSN", "Order Qty"]
+    headers = ["Sl", "Part No / Description", "Make", "HSN", "Out of Stock Date", "Order Qty"]
     for col_idx, h in enumerate(headers, 1):
         cell = ws.cell(row=8, column=col_idx)
         cell.value = h
@@ -2878,10 +2960,13 @@ async def download_order_book_excel(request: Request):
         cell_desc = ws.cell(row=row_idx, column=2, value=part_desc)
         cell_desc.alignment = Alignment(wrap_text=True, vertical="center")
         
-        ws.cell(row=row_idx, column=3, value=item.get("hsn", "") or "—").alignment = Alignment(horizontal="center")
-        ws.cell(row=row_idx, column=4, value=int(item.get("qty", 1))).alignment = Alignment(horizontal="center")
+        make_val = item.get("make") or item.get("brand") or ("Leypart" if active_store == "leypart" else "Mahindra")
+        ws.cell(row=row_idx, column=3, value=make_val).alignment = Alignment(horizontal="center")
+        ws.cell(row=row_idx, column=4, value=item.get("hsn", "") or "—").alignment = Alignment(horizontal="center")
+        ws.cell(row=row_idx, column=5, value=item.get("out_of_stock_date", "") or "—").alignment = Alignment(horizontal="center")
+        ws.cell(row=row_idx, column=6, value=int(item.get("qty", 1))).alignment = Alignment(horizontal="center")
         
-        for c in range(1, 5):
+        for c in range(1, 7):
             cell = ws.cell(row=row_idx, column=c)
             cell.font = font_regular
             cell.border = border_thin
@@ -2901,11 +2986,11 @@ async def download_order_book_excel(request: Request):
 
     # Prepared By
     row_idx += 2
-    ws.cell(row=row_idx, column=3, value="Prepared By:").font = font_bold
-    ws.cell(row=row_idx, column=4, value="__________________").font = font_regular
+    ws.cell(row=row_idx, column=5, value="Prepared By:").font = font_bold
+    ws.cell(row=row_idx, column=6, value="__________________").font = font_regular
 
     # Set column widths
-    column_widths = [6, 45, 12, 14]
+    column_widths = [6, 40, 16, 12, 18, 12]
     for i, w in enumerate(column_widths, 1):
         ws.column_dimensions[get_column_letter(i)].width = w
 
@@ -3034,6 +3119,7 @@ async def download_pdf(request: Request):
             disc = float(row.get("discount", 0))
 
             purchase_rate = 0.0
+            make_val = row.get("make") or row.get("brand") or (product.brand if product else ("Leypart" if active_store == "leypart" else "Mahindra"))
             if product:
                 purchase_rate = float(product.rate or 0.0)
                 product.quantity -= qty
@@ -3041,7 +3127,10 @@ async def download_pdf(request: Request):
                 if product.quantity <= 0:
                     product.quantity = 0
                     product.amount = 0
+                    if not product.out_of_stock_date:
+                        product.out_of_stock_date = datetime.utcnow()
                 else:
+                    product.out_of_stock_date = None
                     product.amount = (product.quantity * (product.rate or 0)) - (
                         (product.quantity * (product.rate or 0)) * ((product.discount or 0) / 100)
                     )
@@ -3056,6 +3145,8 @@ async def download_pdf(request: Request):
             items.append({
                 "part_no": row["part_no"],
                 "description": desc,
+                "make": make_val,
+                "brand": make_val,
                 "hsn": hsn,
                 "qty": qty,
                 "rate": rate,
