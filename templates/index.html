@@ -1773,6 +1773,10 @@ async function fetchPurchasePartDetails(i) {
         if (data.rate && data.rate > 0) purchaseRows[i].rate = data.rate;
         if (data.hsn) purchaseRows[i].hsn = data.hsn;
         if (data.location) purchaseRows[i].location = data.location;
+        if (data.brand || data.make) {
+            purchaseRows[i].brand = data.brand || data.make;
+            purchaseRows[i].make = purchaseRows[i].brand;
+        }
         
         // Auto-fill vendor details at the top if they are empty
         const vNameInput = document.getElementById('purchase-vendor-name');

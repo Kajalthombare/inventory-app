@@ -1422,6 +1422,9 @@ def get_price(request: Request, part_no: str):
         hsn = prod.hsn or (price.hsn if price else "")
     else:
         rate = float(price.mrp) if (price and price.mrp) else (float(prod.rate) if (prod and prod.rate) else 0.0)
+        description = (prod.description if prod and prod.description else "") or (price.description if price else "")
+        hsn = (prod.hsn if prod and prod.hsn else "") or (price.hsn if price else "")
+
     brand = prod.brand if (prod and prod.brand) else (price.brand if (price and getattr(price, "brand", None)) else ("Leypart" if active_store == "leypart" else "Mahindra"))
 
     return {
