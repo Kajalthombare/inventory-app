@@ -933,6 +933,25 @@
             color: white;
             box-shadow: 0 3px 8px rgba(30, 64, 175, 0.25);
         }
+
+        /* ── KEYBOARD & TAB NAVIGATION FOCUS INDICATORS ── */
+        :focus-visible {
+            outline: 2.5px solid var(--primary) !important;
+            outline-offset: 2px !important;
+            box-shadow: 0 0 0 3.5px rgba(37, 99, 235, 0.25) !important;
+        }
+
+        button:focus-visible, .btn:focus-visible, .nav-item:focus-visible, input:focus-visible, select:focus-visible, a:focus-visible {
+            outline: 2.5px solid var(--primary) !important;
+            outline-offset: 2px !important;
+            box-shadow: 0 0 0 3.5px rgba(37, 99, 235, 0.25) !important;
+        }
+
+        .ac-item:hover, .ac-item.ac-active {
+            background: #eff6ff !important;
+            color: var(--primary) !important;
+            outline: none !important;
+        }
     </style>
 </head>
 <body>
@@ -3263,6 +3282,136 @@ function parseSimpleMarkdown(text) {
         </div>
     </div>
 </div>
+
+<script>
+// ══════════════════════════════════════════
+// KEYBOARD & TAB NAVIGATION CONTROLLER
+// ══════════════════════════════════════════
+document.addEventListener('keydown', function(e) {
+    const activeEl = document.activeElement;
+    if (!activeEl) return;
+
+    // 1. Autocomplete List Navigation (ArrowDown / ArrowUp / Enter / Tab)
+    const activeAcList = Array.from(document.querySelectorAll('.ac-list')).find(el => el.style.display === 'block');
+    if (activeAcList) {
+        const items = Array.from(activeAcList.querySelectorAll('.ac-item'));
+        if (items.length > 0) {
+            let activeIdx = items.findIndex(it => it.classList.contains('ac-active'));
+
+            if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                if (activeIdx >= 0) items[activeIdx].classList.remove('ac-active');
+                activeIdx = (activeIdx + 1) % items.length;
+                items[activeIdx].classList.add('ac-active');
+                items[activeIdx].scrollIntoView({ block: 'nearest' });
+                return;
+            } else if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                if (activeIdx >= 0) items[activeIdx].classList.remove('ac-active');
+                activeIdx = (activeIdx - 1 + items.length) % items.length;
+                items[activeIdx].classList.add('ac-active');
+                items[activeIdx].scrollIntoView({ block: 'nearest' });
+                return;
+            } else if ((e.key === 'Enter' || e.key === 'Tab') && activeIdx >= 0) {
+                e.preventDefault();
+                items[activeIdx].click();
+                return;
+            }
+        }
+    }
+
+    // 2. Modals (Enter key to submit form)
+    const obModal = document.getElementById('ob-new-item-modal');
+    if (obModal && obModal.style.display !== 'none' && e.key === 'Enter') {
+        if (activeEl.tagName === 'INPUT' || activeEl.tagName === 'SELECT') {
+            e.preventDefault();
+            saveObNewItem();
+            return;
+        }
+    }
+
+    const pmAddForm = document.getElementById('pm-add-form');
+    if (pmAddForm && pmAddForm.style.display !== 'none' && e.key === 'Enter') {
+        if (activeEl.closest('#pm-add-form') && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'SELECT')) {
+            e.preventDefault();
+            addPMProduct();
+            return;
+        }
+    }
+
+    // 3. Navigation inside Table Rows (Enter / Tab key progression)
+    if (activeEl.tagName === 'INPUT' || activeEl.tagName === 'SELECT') {
+        const row = activeEl.closest('tr');
+        const tbody = row ? row.closest('tbody') : null;
+
+        if (row && tbody) {
+            const rowInputs = Array.from(row.querySelectorAll('input:not([type="hidden"]), select'));
+            const currentIdx = rowInputs.indexOf(activeEl);
+
+            // Pressing Enter inside a table row input
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                if (currentIdx >= 0 && currentIdx < rowInputs.length - 1) {
+                    rowInputs[currentIdx + 1].focus();
+                    if (rowInputs[currentIdx + 1].select) rowInputs[currentIdx + 1].select();
+                } else {
+                    // Reached last input in row -> move to next row or create a new row
+                    const allRows = Array.from(tbody.querySelectorAll('tr'));
+                    const rowIndex = allRows.indexOf(row);
+                    if (rowIndex < allRows.length - 1) {
+                        const nextRowInputs = Array.from(allRows[rowIndex + 1].querySelectorAll('input:not([type="hidden"]), select'));
+                        if (nextRowInputs.length > 0) {
+                            nextRowInputs[0].focus();
+                            if (nextRowInputs[0].select) nextRowInputs[0].select();
+                        }
+                    } else {
+                        // Last row -> Trigger Add Row
+                        triggerAddRowForTbody(tbody.id);
+                    }
+                }
+                return;
+            }
+
+            // Pressing Tab on the last input of the last row in entry tables
+            if (e.key === 'Tab' && !e.shiftKey) {
+                const allRows = Array.from(tbody.querySelectorAll('tr'));
+                const rowIndex = allRows.indexOf(row);
+                if (rowIndex === allRows.length - 1 && currentIdx === rowInputs.length - 1) {
+                    triggerAddRowForTbody(tbody.id);
+                }
+            }
+        }
+    }
+});
+
+function triggerAddRowForTbody(tbodyId) {
+    if (tbodyId === 'purchase_body') {
+        addPurchaseRow();
+        setTimeout(() => {
+            const newInp = document.getElementById(`purchase-pno-${purchaseRows.length - 1}`);
+            if (newInp) { newInp.focus(); }
+        }, 50);
+    } else if (tbodyId === 'q_body') {
+        addQRow();
+        setTimeout(() => {
+            const newInp = document.getElementById(`q-inp-${qRows.length - 1}`);
+            if (newInp) { newInp.focus(); }
+        }, 50);
+    } else if (tbodyId === 'inv_body') {
+        addInvRow();
+        setTimeout(() => {
+            const newInp = document.getElementById(`inv-inp-${invRows.length - 1}`);
+            if (newInp) { newInp.focus(); }
+        }, 50);
+    } else if (tbodyId === 'ob_body') {
+        addObRow();
+        setTimeout(() => {
+            const newInp = document.getElementById(`ob-inp-${obRows.length - 1}`);
+            if (newInp) { newInp.focus(); }
+        }, 50);
+    }
+}
+</script>
 
 </body>
 </html>
