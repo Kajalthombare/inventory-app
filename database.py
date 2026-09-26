@@ -15,9 +15,11 @@ if os.path.exists(".env"):
 # Falls back to local SQLite for development
 DATABASE_URL = os.environ.get("DATABASE_URL", "sqlite:///inventory.db")
 
-# Render sometimes gives postgres:// — SQLAlchemy needs postgresql://
+# Railway / Render gives postgres:// or postgresql:// — SQLAlchemy needs postgresql+psycopg2://
 if DATABASE_URL.startswith("postgres://"):
-    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
+    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql+psycopg2://", 1)
+elif DATABASE_URL.startswith("postgresql://") and not DATABASE_URL.startswith("postgresql+"):
+    DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+psycopg2://", 1)
 
 # PostgreSQL doesn't need check_same_thread
 if DATABASE_URL.startswith("sqlite"):
