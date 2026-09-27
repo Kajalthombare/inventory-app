@@ -933,7 +933,7 @@ def export_stock_excel(request: Request, q: str = Query("")):
         headers = [
             "Part No", "Description", "Make", "HSN", "GST %", 
             "Quantity", "Stock Status", "Purchase Rate (₹)", 
-            "Discount %", "Taxable Amount (₹)", "Store Location", "Vendor Name"
+            "Discount %", "Taxable Amount (₹)", "Rack Code", "Vendor Name"
         ]
         
         ws.append(headers)

@@ -1735,7 +1735,7 @@
                                     <th>Description</th>
                                     <th style="width: 120px;">Make</th>
                                     <th style="width: 100px;">HSN</th>
-                                    <th style="width: 110px;">Location</th>
+                                    <th style="width: 110px;">Rack Code</th>
                                     <th style="width: 70px;">GST %</th>
                                     <th style="width: 80px;">Qty</th>
                                     <th style="width: 100px;">Rate (₹)</th>
@@ -1797,7 +1797,7 @@
                                 <th>Description</th>
                                 <th>Make</th>
                                 <th>HSN</th>
-                                <th style="text-align:center;">Store Location</th>
+                                <th style="text-align:center;">Rack Code</th>
                                 <th>GST %</th>
                                 <th>Qty</th>
                                 <th>Purchase Rate (₹)</th>
@@ -1816,8 +1816,8 @@
                                 <td style="text-align:center;">
                                     <span id="loc-badge-{{p.id}}" onclick="editLocation({{p.id}}, '{{ (p.location or '')|e }}')" 
                                           style="cursor:pointer; display:inline-flex; align-items:center; gap:4px; padding:3px 8px; border-radius:12px; font-size:11px; font-weight:600; background:{% if p.location %}#eff6ff{% else %}#f1f5f9{% endif %}; color:{% if p.location %}#1d4ed8{% else %}#64748b{% endif %}; border:1px solid {% if p.location %}#bfdbfe{% else %}#cbd5e1{% endif %};" 
-                                          title="Click to edit store location">
-                                        📍 <span id="loc-text-{{p.id}}">{% if p.location %}{{ p.location }}{% else %}+ Set Loc{% endif %}</span> ✏️
+                                          title="Click to edit rack code">
+                                        📍 <span id="loc-text-{{p.id}}">{% if p.location %}{{ p.location }}{% else %}+ Set Rack{% endif %}</span> ✏️
                                     </span>
                                 </td>
                                 <td>{{ p.gst }}%</td>
@@ -2117,7 +2117,7 @@ function exportStockExcel() {
 }
 
 async function editLocation(productId, currentLoc) {
-    const newLoc = prompt("Enter Store Location (e.g. Rack A-1, Shelf 3, Bin 12):", currentLoc || "");
+    const newLoc = prompt("Enter Rack Code (e.g. Rack A-1, Shelf 3, Bin 12):", currentLoc || "");
     if (newLoc === null) return;
     
     try {
@@ -2899,6 +2899,7 @@ function addInvRow(focus = false){
 }
 
 function renderInvRows(focusId){
+    const activeElId = focusId || (document.activeElement ? document.activeElement.id : null);
     let html = '', grand = 0;
     invRows.forEach((r, i) => {
         const rate = parseFloat(r.rate) || 0;
@@ -2944,9 +2945,9 @@ function renderInvRows(focusId){
     });
     document.getElementById('inv_body').innerHTML = html;
     document.getElementById('inv_grand_total').textContent = grand.toFixed(2);
-    if (focusId) {
+    if (activeElId) {
         setTimeout(() => {
-            const el = document.getElementById(focusId);
+            const el = document.getElementById(activeElId);
             if (el) el.focus();
         }, 10);
     }
@@ -2977,14 +2978,38 @@ function updateInvRowCalc(i) {
 }
 
 async function fetchInvStock(i){
-    if (!invRows[i].part_no) return;
-    const d = await (await fetch(`/get_rate/${encodeURIComponent(invRows[i].part_no)}`)).json();
-    invRows[i].stock = d.stock || 0;
-    if (d.description) invRows[i].description = d.description;
-    if (d.rate && d.rate > 0) invRows[i].rate = d.rate;
-    if (d.hsn) invRows[i].hsn = d.hsn;
-    if (invRows[i].qty > invRows[i].stock && invRows[i].stock > 0) invRows[i].qty = invRows[i].stock;
-    renderInvRows();
+    if (!invRows[i] || !invRows[i].part_no) return;
+    try {
+        const d = await (await fetch(`/get_rate/${encodeURIComponent(invRows[i].part_no)}`)).json();
+        invRows[i].stock = d.stock || 0;
+        if (d.description) invRows[i].description = d.description;
+        if (d.rate && d.rate > 0) invRows[i].rate = d.rate;
+        if (d.hsn) invRows[i].hsn = d.hsn;
+        if (invRows[i].qty > invRows[i].stock && invRows[i].stock > 0) invRows[i].qty = invRows[i].stock;
+
+        const descEl = document.getElementById(`inv-desc-${i}`);
+        if (descEl) descEl.innerHTML = invRows[i].description || '<span style="opacity:0.4;">—</span>';
+
+        const rateEl = document.getElementById(`inv-rate-${i}`);
+        if (rateEl) rateEl.innerHTML = `₹ ${(invRows[i].rate || 0).toFixed(2)}`;
+
+        const stockEl = document.getElementById(`inv-stock-${i}`);
+        if (stockEl) {
+            stockEl.innerHTML = invRows[i].part_no
+                ? (invRows[i].stock===0 ? `<span class="badge badge-danger">Out of Stock</span>` : invRows[i].stock<5 ? `<span class="badge badge-warning">${invRows[i].stock} left</span>` : `<span class="badge badge-success">${invRows[i].stock} avail</span>`)
+                : '—';
+        }
+
+        const qtyEl = document.getElementById(`inv-qty-${i}`);
+        if (qtyEl) {
+            qtyEl.max = invRows[i].stock || 9999;
+            qtyEl.value = invRows[i].qty || 1;
+        }
+
+        updateInvRowCalc(i);
+    } catch(e) {
+        console.error('fetchInvStock error:', e);
+    }
 }
 
 async function loadInvoiceList(){
