@@ -952,9 +952,203 @@
             color: var(--primary) !important;
             outline: none !important;
         }
+
+        /* ── MOBILE & TABLET RESPONSIVE STYLES ── */
+        .mobile-toggle-btn {
+            display: none;
+            background: var(--bg);
+            border: 1.5px solid var(--border);
+            color: var(--text);
+            padding: 6px 12px;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            align-items: center;
+            gap: 6px;
+        }
+
+        #sidebar-overlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(13, 31, 60, 0.6);
+            backdrop-filter: blur(4px);
+            -webkit-backdrop-filter: blur(4px);
+            z-index: 99;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+
+        #sidebar-overlay.active {
+            display: block;
+            opacity: 1;
+        }
+
+        @media (max-width: 992px) {
+            .mobile-toggle-btn {
+                display: inline-flex;
+            }
+
+            .sidebar {
+                transform: translateX(-100%);
+                transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+                width: 260px;
+                box-shadow: 4px 0 25px rgba(0, 0, 0, 0.3);
+            }
+
+            .sidebar.mobile-open {
+                transform: translateX(0);
+            }
+
+            .main {
+                margin-left: 0 !important;
+                width: 100% !important;
+            }
+
+            .topbar {
+                padding: 10px 16px;
+                height: auto;
+                min-height: 60px;
+                flex-wrap: wrap;
+                gap: 10px;
+            }
+
+            .topbar-search {
+                width: 100%;
+                order: 3;
+            }
+
+            .page-body {
+                padding: 16px;
+            }
+
+            .stats-grid {
+                grid-template-columns: repeat(2, 1fr) !important;
+                gap: 12px;
+            }
+        }
+
+        @media (max-width: 768px) {
+            .stats-grid {
+                grid-template-columns: repeat(2, 1fr) !important;
+                gap: 10px;
+            }
+
+            .stat-card {
+                padding: 14px;
+            }
+
+            .stat-value {
+                font-size: 18px;
+            }
+
+            .section-header {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 12px;
+                padding: 14px;
+            }
+
+            .section-header > div:last-child {
+                width: 100%;
+                display: flex;
+                flex-wrap: wrap;
+                gap: 8px;
+            }
+
+            .section-header .btn {
+                flex: 1 1 auto;
+                justify-content: center;
+                text-align: center;
+            }
+
+            .section-body {
+                padding: 14px;
+            }
+
+            .form-row {
+                flex-direction: column;
+                align-items: stretch;
+                gap: 10px;
+            }
+
+            .form-field {
+                width: 100% !important;
+                flex: none !important;
+                min-width: 0 !important;
+            }
+
+            .form-input {
+                width: 100%;
+                min-height: 42px;
+                font-size: 14px;
+            }
+
+            .table-wrap {
+                overflow-x: auto;
+                -webkit-overflow-scrolling: touch;
+                margin: 8px 0;
+                border: 1px solid var(--border);
+                border-radius: 8px;
+            }
+
+            .data-table {
+                min-width: 650px;
+            }
+
+            .store-tabs {
+                flex-direction: column;
+                gap: 6px;
+            }
+
+            .grand-total-row {
+                flex-direction: column;
+                align-items: flex-end;
+                gap: 4px;
+            }
+
+            .summary-grid {
+                grid-template-columns: repeat(2, 1fr) !important;
+                max-width: 100% !important;
+            }
+
+            .chatbot-widget {
+                right: 12px;
+                bottom: 12px;
+            }
+
+            .chatbot-toggle {
+                width: 48px;
+                height: 48px;
+                font-size: 20px;
+            }
+
+            .chatbot-window {
+                right: 0;
+                bottom: 60px;
+                width: calc(100vw - 24px);
+                max-width: 360px;
+                height: calc(100vh - 100px);
+                max-height: 480px;
+            }
+        }
+
+        @media (max-width: 480px) {
+            .stats-grid {
+                grid-template-columns: 1fr !important;
+            }
+
+            .summary-grid {
+                grid-template-columns: 1fr !important;
+            }
+        }
     </style>
 </head>
 <body>
+
+<!-- Mobile Sidebar Backdrop Overlay -->
+<div id="sidebar-overlay" onclick="toggleMobileSidebar()"></div>
 
 <!-- ═══════════════ SIDEBAR ═══════════════ -->
 <aside class="sidebar">
@@ -1018,6 +1212,7 @@
     <!-- Top Bar -->
     <div class="topbar">
         <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+            <button class="mobile-toggle-btn" onclick="toggleMobileSidebar()" aria-label="Toggle Navigation Menu">☰ Menu</button>
             <span class="topbar-title">Inventory Dashboard</span>
             <span class="badge" style="background:#eff6ff;color:var(--primary);border:1px solid #bfdbfe;font-size:12px;padding:4px 10px;border-radius:20px;display:inline-flex;align-items:center;gap:6px;">
                 <span>{% if active_store == 'mahindra' %}🚜{% else %}🚗{% endif %}</span>
@@ -1700,24 +1895,29 @@ document.getElementById('search').addEventListener('keypress', function(e){
 // ── Stock Purchase Multi-Item Entry Logic ──
 let purchaseRows = [];
 
-function addPurchaseRow() {
+function addPurchaseRow(focus = false) {
     const defaultMake = typeof activeStore !== 'undefined' && activeStore === 'leypart' ? 'Leypart' : 'Mahindra';
     purchaseRows.push({ part_no: '', description: '', brand: defaultMake, make: defaultMake, hsn: '', location: '', gst: 18.0, qty: 1, rate: 0.0, discount: 0.0 });
-    renderPurchaseRows();
+    const newIdx = purchaseRows.length - 1;
+    renderPurchaseRows(focus ? `purchase-pno-${newIdx}` : null);
 }
 
-function renderPurchaseRows() {
+function renderPurchaseRows(focusId) {
     let html = '', grand = 0;
     purchaseRows.forEach((r, i) => {
         const makeVal = r.make || r.brand || (typeof activeStore !== 'undefined' && activeStore === 'leypart' ? 'Leypart' : 'Mahindra');
-        const sub = r.rate * r.qty;
-        const disc = sub * (r.discount / 100);
-        const total = (sub - disc) * (1 + (r.gst / 100));
+        const rate = parseFloat(r.rate) || 0;
+        const qty = parseFloat(r.qty) || 1;
+        const gst = parseFloat(r.gst) !== undefined && !isNaN(parseFloat(r.gst)) ? parseFloat(r.gst) : 18.0;
+        const discount = parseFloat(r.discount) || 0;
+        const sub = rate * qty;
+        const disc = sub * (discount / 100);
+        const total = (sub - disc) * (1 + (gst / 100));
         grand += total;
 
-        html += `<tr>
+        html += `<tr id="purchase-row-${i}">
             <td style="position:relative;">
-                <input id="purchase-pno-${i}" value="${r.part_no}"
+                <input id="purchase-pno-${i}" value="${r.part_no || ''}"
                     oninput="acSearch(this, document.getElementById('purchase-ac-${i}'), d => {
                         purchaseRows[${i}].part_no = d.part_no;
                         purchaseRows[${i}].description = d.description;
@@ -1729,58 +1929,98 @@ function renderPurchaseRows() {
                         fetchPurchasePartDetails(${i});
                     })"
                     onblur="purchaseRows[${i}].part_no = this.value.trim().toUpperCase(); this.value = purchaseRows[${i}].part_no; if(purchaseRows[${i}].part_no) fetchPurchasePartDetails(${i});"
+                    onkeydown="handleRowKey(event, 'purchase', ${i}, 'pno')"
                     class="q-table-input" placeholder="Part No or search…">
                 <div id="purchase-ac-${i}" class="ac-list"></div>
             </td>
             <td>
-                <input type="text" value="${r.description}"
-                    onchange="purchaseRows[${i}].description = this.value; renderPurchaseRows();"
+                <input type="text" id="purchase-desc-${i}" value="${r.description || ''}"
+                    oninput="purchaseRows[${i}].description = this.value;"
+                    onkeydown="handleRowKey(event, 'purchase', ${i}, 'desc')"
                     class="q-table-input" placeholder="Description">
             </td>
             <td>
-                <input type="text" value="${makeVal}"
-                    onchange="purchaseRows[${i}].brand = this.value; purchaseRows[${i}].make = this.value; renderPurchaseRows();"
+                <input type="text" id="purchase-make-${i}" value="${makeVal}"
+                    oninput="purchaseRows[${i}].brand = this.value; purchaseRows[${i}].make = this.value;"
+                    onkeydown="handleRowKey(event, 'purchase', ${i}, 'make')"
                     class="q-table-input" placeholder="Make" style="width:110px;">
             </td>
             <td>
-                <input type="text" value="${r.hsn}"
-                    onchange="purchaseRows[${i}].hsn = this.value; renderPurchaseRows();"
+                <input type="text" id="purchase-hsn-${i}" value="${r.hsn || ''}"
+                    oninput="purchaseRows[${i}].hsn = this.value;"
+                    onkeydown="handleRowKey(event, 'purchase', ${i}, 'hsn')"
                     class="q-table-input" placeholder="HSN" style="width:100px;">
             </td>
             <td>
-                <input type="text" value="${r.location || ''}"
-                    onchange="purchaseRows[${i}].location = this.value; renderPurchaseRows();"
+                <input type="text" id="purchase-loc-${i}" value="${r.location || ''}"
+                    oninput="purchaseRows[${i}].location = this.value;"
+                    onkeydown="handleRowKey(event, 'purchase', ${i}, 'loc')"
                     class="q-table-input" placeholder="e.g. Rack A-1" style="width:110px;">
             </td>
             <td>
-                <input type="number" value="${r.gst}" min="0" max="100"
-                    onchange="purchaseRows[${i}].gst = parseFloat(this.value) || 0; renderPurchaseRows();"
+                <input type="number" id="purchase-gst-${i}" value="${r.gst !== undefined ? r.gst : 18}" min="0" max="100"
+                    oninput="purchaseRows[${i}].gst = parseFloat(this.value) || 0; updatePurchaseRowCalc(${i});"
+                    onkeydown="handleRowKey(event, 'purchase', ${i}, 'gst')"
                     class="q-table-input" style="width:65px;">
             </td>
             <td>
-                <input type="number" value="${r.qty}" min="1"
-                    onchange="purchaseRows[${i}].qty = parseFloat(this.value) || 0; renderPurchaseRows();"
+                <input type="number" id="purchase-qty-${i}" value="${r.qty || 1}" min="1"
+                    oninput="purchaseRows[${i}].qty = parseFloat(this.value) || 0; updatePurchaseRowCalc(${i});"
+                    onkeydown="handleRowKey(event, 'purchase', ${i}, 'qty')"
                     class="q-table-input" style="width:70px;">
             </td>
             <td>
-                <input type="number" value="${r.rate}" min="0" step="any"
-                    onchange="purchaseRows[${i}].rate = parseFloat(this.value) || 0; renderPurchaseRows();"
-                    class="q-table-input" style="width:100px;">
+                <input type="number" id="purchase-rate-${i}" value="${r.rate !== undefined && r.rate !== null ? r.rate : ''}" min="0" step="any"
+                    oninput="purchaseRows[${i}].rate = parseFloat(this.value) || 0; updatePurchaseRowCalc(${i});"
+                    onkeydown="handleRowKey(event, 'purchase', ${i}, 'rate')"
+                    class="q-table-input" style="width:100px;" placeholder="0.00">
             </td>
             <td>
-                <input type="number" value="${r.discount}" min="0" max="100"
-                    onchange="purchaseRows[${i}].discount = parseFloat(this.value) || 0; renderPurchaseRows();"
+                <input type="number" id="purchase-disc-${i}" value="${r.discount !== undefined ? r.discount : 0}" min="0" max="100"
+                    oninput="purchaseRows[${i}].discount = parseFloat(this.value) || 0; updatePurchaseRowCalc(${i});"
+                    onkeydown="handleRowKey(event, 'purchase', ${i}, 'disc')"
                     class="q-table-input" style="width:65px;">
             </td>
-            <td style="font-weight:700; color:var(--success); white-space:nowrap;">₹ ${total.toFixed(2)}</td>
+            <td id="purchase-tot-${i}" style="font-weight:700; color:var(--success); white-space:nowrap;">₹ ${total.toFixed(2)}</td>
             <td>
-                <button onclick="purchaseRows.splice(${i}, 1); renderPurchaseRows();" class="btn btn-ghost btn-sm">✕</button>
+                <button onclick="purchaseRows.splice(${i}, 1); renderPurchaseRows();" class="btn btn-ghost btn-sm" tabindex="-1">✕</button>
             </td>
         </tr>`;
     });
 
     document.getElementById('purchase_body').innerHTML = html;
     document.getElementById('purchase_grand_total').textContent = grand.toFixed(2);
+    if (focusId) {
+        setTimeout(() => {
+            const el = document.getElementById(focusId);
+            if (el) el.focus();
+        }, 10);
+    }
+}
+
+function updatePurchaseRowCalc(i) {
+    if (!purchaseRows[i]) return;
+    const r = purchaseRows[i];
+    const rate = parseFloat(r.rate) || 0;
+    const qty = parseFloat(r.qty) || 1;
+    const gst = parseFloat(r.gst) !== undefined && !isNaN(parseFloat(r.gst)) ? parseFloat(r.gst) : 18.0;
+    const discount = parseFloat(r.discount) || 0;
+    const sub = rate * qty;
+    const disc = sub * (discount / 100);
+    const total = (sub - disc) * (1 + (gst / 100));
+
+    const totEl = document.getElementById(`purchase-tot-${i}`);
+    if (totEl) totEl.textContent = `₹ ${total.toFixed(2)}`;
+
+    let grand = 0;
+    purchaseRows.forEach(row => {
+        const s = (parseFloat(row.rate) || 0) * (parseFloat(row.qty) || 1);
+        const g = parseFloat(row.gst) !== undefined && !isNaN(parseFloat(row.gst)) ? parseFloat(row.gst) : 18.0;
+        const d = s * ((parseFloat(row.discount) || 0) / 100);
+        grand += (s - d) * (1 + (g / 100));
+    });
+    const gEl = document.getElementById('purchase_grand_total');
+    if (gEl) gEl.textContent = grand.toFixed(2);
 }
 
 async function fetchPurchasePartDetails(i) {
@@ -2242,56 +2482,176 @@ document.getElementById('p_vendor_search').addEventListener('input', function() 
 });
 
 // ══════════════════════════════════════════
+function toggleMobileSidebar() {
+    const sb = document.querySelector('.sidebar');
+    const ov = document.getElementById('sidebar-overlay');
+    if (sb) sb.classList.toggle('mobile-open');
+    if (ov) ov.classList.toggle('active');
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    document.querySelectorAll('.sidebar-nav .nav-item').forEach(item => {
+        item.addEventListener('click', () => {
+            const sb = document.querySelector('.sidebar');
+            const ov = document.getElementById('sidebar-overlay');
+            if (sb && sb.classList.contains('mobile-open')) sb.classList.remove('mobile-open');
+            if (ov && ov.classList.contains('active')) ov.classList.remove('active');
+        });
+    });
+});
+
+function handleRowKey(e, type, index, field) {
+    const fieldsMap = {
+        'q': ['pno', 'desc', 'hsn', 'rate', 'qty', 'disc'],
+        'inv': ['pno', 'qty', 'disc'],
+        'ob': ['pno', 'desc', 'make', 'hsn', 'date', 'qty'],
+        'purchase': ['pno', 'desc', 'make', 'hsn', 'loc', 'gst', 'qty', 'rate', 'disc']
+    };
+    const fList = fieldsMap[type];
+    if (!fList) return;
+
+    if (e.key === 'Tab' && !e.shiftKey) {
+        if (field === fList[fList.length - 1]) {
+            let rowArray, addFn;
+            if (type === 'q') { rowArray = qRows; addFn = addQRow; }
+            else if (type === 'inv') { rowArray = invRows; addFn = addInvRow; }
+            else if (type === 'ob') { rowArray = obRows; addFn = addObRow; }
+            else if (type === 'purchase') { rowArray = purchaseRows; addFn = addPurchaseRow; }
+            
+            if (rowArray && index === rowArray.length - 1) {
+                e.preventDefault();
+                addFn(true);
+            }
+        }
+    } else if (e.key === 'Enter') {
+        e.preventDefault();
+        const currIdx = fList.indexOf(field);
+        if (currIdx < fList.length - 1) {
+            const nextId = `${type}-${fList[currIdx + 1]}-${index}`;
+            const el = document.getElementById(nextId);
+            if (el) el.focus();
+        } else {
+            let rowArray, addFn;
+            if (type === 'q') { rowArray = qRows; addFn = addQRow; }
+            else if (type === 'inv') { rowArray = invRows; addFn = addInvRow; }
+            else if (type === 'ob') { rowArray = obRows; addFn = addObRow; }
+            else if (type === 'purchase') { rowArray = purchaseRows; addFn = addPurchaseRow; }
+            
+            if (rowArray && index < rowArray.length - 1) {
+                const nextId = `${type}-${fList[0]}-${index + 1}`;
+                const el = document.getElementById(nextId);
+                if (el) el.focus();
+            } else if (addFn) {
+                addFn(true);
+            }
+        }
+    }
+}
+
+// ══════════════════════════════════════════
 // QUOTATION TAB (NO stock change)
 // ══════════════════════════════════════════
 let qRows = [];
 
-function addQRow(){
+function addQRow(focus = false){
     qRows.push({ part_no:'', description:'', rate:0, qty:1, discount:0, stock:0, hsn:'' });
-    renderQRows();
+    const newIdx = qRows.length - 1;
+    renderQRows(focus ? `q-pno-${newIdx}` : null);
 }
 
-function renderQRows(){
+function renderQRows(focusId){
     let html = '', grand = 0;
     qRows.forEach((r, i) => {
-        const sub = r.rate * r.qty, disc = sub*(r.discount/100), after = sub-disc, total = after*1.18;
+        const rate = parseFloat(r.rate) || 0;
+        const qty = parseFloat(r.qty) || 1;
+        const discount = parseFloat(r.discount) || 0;
+        const sub = rate * qty;
+        const disc = sub * (discount / 100);
+        const after = sub - disc;
+        const total = after * 1.18;
         grand += total;
+
         const stockBadge = r.part_no
             ? (r.stock===0 ? `<span class="badge badge-warning">?</span>` : r.stock<5 ? `<span class="badge badge-warning">${r.stock}</span>` : `<span class="badge badge-success">${r.stock}</span>`)
             : '—';
-        html += `<tr>
+
+        html += `<tr id="q-row-${i}">
             <td style="position:relative;">
-                <input id="q-inp-${i}" value="${r.part_no}" 
-                    oninput="acSearch(this,document.getElementById('q-ac-${i}'),d=>{qRows[${i}].part_no=d.part_no;qRows[${i}].description=d.description;qRows[${i}].rate=d.rate;qRows[${i}].hsn=d.hsn;fetchQStock(${i});renderQRows();})"
+                <input id="q-pno-${i}" value="${r.part_no || ''}" 
+                    oninput="acSearch(this,document.getElementById('q-ac-${i}'),d=>{qRows[${i}].part_no=d.part_no;qRows[${i}].description=d.description;qRows[${i}].rate=d.rate;qRows[${i}].hsn=d.hsn;fetchQStock(${i});renderQRows('q-qty-${i}');})"
                     onblur="qRows[${i}].part_no=this.value.trim().toUpperCase();this.value=qRows[${i}].part_no;if(qRows[${i}].part_no)fetchQStock(${i});"
+                    onkeydown="handleRowKey(event, 'q', ${i}, 'pno')"
                     class="q-table-input" placeholder="Part No or search…">
                 <div id="q-ac-${i}" class="ac-list"></div>
             </td>
             <td>
-                <input type="text" value="${r.description || ''}" 
-                    onchange="qRows[${i}].description=this.value;renderQRows()" 
+                <input type="text" id="q-desc-${i}" value="${r.description || ''}" 
+                    oninput="qRows[${i}].description=this.value" 
+                    onkeydown="handleRowKey(event, 'q', ${i}, 'desc')"
                     class="q-table-input" placeholder="Description" style="min-width:180px;">
                 <div style="margin-top: 4px; display: flex; align-items: center; gap: 4px;">
                     <span style="font-size: 10px; color: var(--text-muted); white-space: nowrap;">HSN:</span>
-                    <input type="text" value="${r.hsn || ''}" 
-                        onchange="qRows[${i}].hsn=this.value;renderQRows()" 
+                    <input type="text" id="q-hsn-${i}" value="${r.hsn || ''}" 
+                        oninput="qRows[${i}].hsn=this.value" 
+                        onkeydown="handleRowKey(event, 'q', ${i}, 'hsn')"
                         class="q-table-input" style="font-size: 11px; padding: 2px 6px; height: auto;" placeholder="HSN (optional)">
                 </div>
             </td>
             <td>
-                <input type="number" value="${r.rate}" min="0" step="any" 
-                    onchange="qRows[${i}].rate=parseFloat(this.value)||0;renderQRows()" 
+                <input type="number" id="q-rate-${i}" value="${r.rate !== undefined && r.rate !== null ? r.rate : ''}" min="0" step="any" 
+                    oninput="qRows[${i}].rate=parseFloat(this.value)||0;updateQRowCalc(${i})" 
+                    onkeydown="handleRowKey(event, 'q', ${i}, 'rate')"
                     class="q-table-input" style="width:100px;" placeholder="0.00">
             </td>
-            <td>${stockBadge}</td>
-            <td><input type="number" value="${r.qty}" min="1" onchange="qRows[${i}].qty=parseFloat(this.value)||1;renderQRows()" class="q-table-input" style="width:70px;"></td>
-            <td><input type="number" value="${r.discount}" min="0" max="100" onchange="qRows[${i}].discount=parseFloat(this.value)||0;renderQRows()" class="q-table-input" style="width:65px;"></td>
-            <td style="font-weight:700;color:var(--primary); white-space: nowrap;">₹ ${total.toFixed(2)}</td>
-            <td><button onclick="qRows.splice(${i},1);renderQRows()" class="btn btn-ghost btn-sm">✕</button></td>
+            <td id="q-stock-${i}">${stockBadge}</td>
+            <td>
+                <input type="number" id="q-qty-${i}" value="${r.qty || 1}" min="1" 
+                    oninput="qRows[${i}].qty=parseFloat(this.value)||1;updateQRowCalc(${i})" 
+                    onkeydown="handleRowKey(event, 'q', ${i}, 'qty')"
+                    class="q-table-input" style="width:70px;">
+            </td>
+            <td>
+                <input type="number" id="q-disc-${i}" value="${r.discount !== undefined ? r.discount : 0}" min="0" max="100" 
+                    oninput="qRows[${i}].discount=parseFloat(this.value)||0;updateQRowCalc(${i})" 
+                    onkeydown="handleRowKey(event, 'q', ${i}, 'disc')"
+                    class="q-table-input" style="width:65px;">
+            </td>
+            <td id="q-tot-${i}" style="font-weight:700;color:var(--primary); white-space: nowrap;">₹ ${total.toFixed(2)}</td>
+            <td><button onclick="qRows.splice(${i},1);renderQRows()" class="btn btn-ghost btn-sm" tabindex="-1">✕</button></td>
         </tr>`;
     });
     document.getElementById('q_body').innerHTML = html;
     document.getElementById('q_grand_total').textContent = grand.toFixed(2);
+    if (focusId) {
+        setTimeout(() => {
+            const el = document.getElementById(focusId);
+            if (el) el.focus();
+        }, 10);
+    }
+}
+
+function updateQRowCalc(i) {
+    if (!qRows[i]) return;
+    const r = qRows[i];
+    const rate = parseFloat(r.rate) || 0;
+    const qty = parseFloat(r.qty) || 1;
+    const discount = parseFloat(r.discount) || 0;
+    const sub = rate * qty;
+    const disc = sub * (discount / 100);
+    const after = sub - disc;
+    const total = after * 1.18;
+
+    const totEl = document.getElementById(`q-tot-${i}`);
+    if (totEl) totEl.textContent = `₹ ${total.toFixed(2)}`;
+
+    let grand = 0;
+    qRows.forEach(row => {
+        const s = (parseFloat(row.rate) || 0) * (parseFloat(row.qty) || 1);
+        const d = s * ((parseFloat(row.discount) || 0) / 100);
+        grand += (s - d) * 1.18;
+    });
+    const grandEl = document.getElementById('q_grand_total');
+    if (grandEl) grandEl.textContent = grand.toFixed(2);
 }
 
 async function fetchQStock(i){
@@ -2483,38 +2843,88 @@ loadQuotationList();
 // ══════════════════════════════════════════
 let invRows = [];
 
-function addInvRow(){
+function addInvRow(focus = false){
     invRows.push({ part_no:'', description:'', rate:0, qty:1, discount:0, stock:0, hsn:'' });
-    renderInvRows();
+    const newIdx = invRows.length - 1;
+    renderInvRows(focus ? `inv-pno-${newIdx}` : null);
 }
 
-function renderInvRows(){
+function renderInvRows(focusId){
     let html = '', grand = 0;
     invRows.forEach((r, i) => {
-        const sub = r.rate * r.qty, disc = sub*(r.discount/100), after = sub-disc, total = after*1.18;
+        const rate = parseFloat(r.rate) || 0;
+        const qty = parseFloat(r.qty) || 1;
+        const discount = parseFloat(r.discount) || 0;
+        const sub = rate * qty;
+        const disc = sub * (discount / 100);
+        const after = sub - disc;
+        const total = after * 1.18;
         grand += total;
+
         const stockBadge = r.part_no
             ? (r.stock===0 ? `<span class="badge badge-danger">Out of Stock</span>` : r.stock<5 ? `<span class="badge badge-warning">${r.stock} left</span>` : `<span class="badge badge-success">${r.stock} avail</span>`)
             : '—';
-        html += `<tr>
+
+        html += `<tr id="inv-row-${i}">
             <td style="position:relative;">
-                <input id="inv-inp-${i}" value="${r.part_no}"
-                    oninput="acSearch(this,document.getElementById('inv-ac-${i}'),d=>{invRows[${i}].part_no=d.part_no;invRows[${i}].description=d.description;invRows[${i}].rate=d.rate;invRows[${i}].hsn=d.hsn;fetchInvStock(${i});renderInvRows();})"
+                <input id="inv-pno-${i}" value="${r.part_no || ''}"
+                    oninput="acSearch(this,document.getElementById('inv-ac-${i}'),d=>{invRows[${i}].part_no=d.part_no;invRows[${i}].description=d.description;invRows[${i}].rate=d.rate;invRows[${i}].hsn=d.hsn;fetchInvStock(${i});renderInvRows('inv-qty-${i}');})"
                     onblur="invRows[${i}].part_no=this.value.trim().toUpperCase();this.value=invRows[${i}].part_no;if(invRows[${i}].part_no)fetchInvStock(${i});"
+                    onkeydown="handleRowKey(event, 'inv', ${i}, 'pno')"
                     class="q-table-input" placeholder="Part No or search…">
                 <div id="inv-ac-${i}" class="ac-list"></div>
             </td>
-            <td style="color:var(--text-muted);font-size:12px;min-width:140px;">${r.description||'<span style="opacity:0.4;">—</span>'}</td>
-            <td style="font-weight:600;">₹ ${r.rate.toFixed(2)}</td>
-            <td>${stockBadge}</td>
-            <td><input type="number" value="${r.qty}" min="1" max="${r.stock||9999}" onchange="invRows[${i}].qty=Math.min(parseFloat(this.value)||1,${r.stock||9999});renderInvRows()" class="q-table-input" style="width:70px;"></td>
-            <td><input type="number" value="${r.discount}" min="0" max="100" onchange="invRows[${i}].discount=parseFloat(this.value)||0;renderInvRows()" class="q-table-input" style="width:65px;"></td>
-            <td style="font-weight:700;color:var(--danger);">₹ ${total.toFixed(2)}</td>
-            <td><button onclick="invRows.splice(${i},1);renderInvRows()" class="btn btn-ghost btn-sm">✕</button></td>
+            <td style="color:var(--text-muted);font-size:12px;min-width:140px;" id="inv-desc-${i}">${r.description||'<span style="opacity:0.4;">—</span>'}</td>
+            <td style="font-weight:600;" id="inv-rate-${i}">₹ ${rate.toFixed(2)}</td>
+            <td id="inv-stock-${i}">${stockBadge}</td>
+            <td>
+                <input type="number" id="inv-qty-${i}" value="${r.qty || 1}" min="1" max="${r.stock||9999}" 
+                    oninput="invRows[${i}].qty=Math.min(parseFloat(this.value)||1,${r.stock||9999});updateInvRowCalc(${i})" 
+                    onkeydown="handleRowKey(event, 'inv', ${i}, 'qty')"
+                    class="q-table-input" style="width:70px;">
+            </td>
+            <td>
+                <input type="number" id="inv-disc-${i}" value="${r.discount !== undefined ? r.discount : 0}" min="0" max="100" 
+                    oninput="invRows[${i}].discount=parseFloat(this.value)||0;updateInvRowCalc(${i})" 
+                    onkeydown="handleRowKey(event, 'inv', ${i}, 'disc')"
+                    class="q-table-input" style="width:65px;">
+            </td>
+            <td id="inv-tot-${i}" style="font-weight:700;color:var(--danger);">₹ ${total.toFixed(2)}</td>
+            <td><button onclick="invRows.splice(${i},1);renderInvRows()" class="btn btn-ghost btn-sm" tabindex="-1">✕</button></td>
         </tr>`;
     });
     document.getElementById('inv_body').innerHTML = html;
     document.getElementById('inv_grand_total').textContent = grand.toFixed(2);
+    if (focusId) {
+        setTimeout(() => {
+            const el = document.getElementById(focusId);
+            if (el) el.focus();
+        }, 10);
+    }
+}
+
+function updateInvRowCalc(i) {
+    if (!invRows[i]) return;
+    const r = invRows[i];
+    const rate = parseFloat(r.rate) || 0;
+    const qty = parseFloat(r.qty) || 1;
+    const discount = parseFloat(r.discount) || 0;
+    const sub = rate * qty;
+    const disc = sub * (discount / 100);
+    const after = sub - disc;
+    const total = after * 1.18;
+
+    const totEl = document.getElementById(`inv-tot-${i}`);
+    if (totEl) totEl.textContent = `₹ ${total.toFixed(2)}`;
+
+    let grand = 0;
+    invRows.forEach(row => {
+        const s = (parseFloat(row.rate) || 0) * (parseFloat(row.qty) || 1);
+        const d = s * ((parseFloat(row.discount) || 0) / 100);
+        grand += (s - d) * 1.18;
+    });
+    const grandEl = document.getElementById('inv_grand_total');
+    if (grandEl) grandEl.textContent = grand.toFixed(2);
 }
 
 async function fetchInvStock(i){
@@ -2802,49 +3212,68 @@ async function refreshOrderBook() {
     renderObRows();
 }
 
-function renderObRows() {
+function addObRow(focus = false) {
+    const defaultMake = typeof activeStore !== 'undefined' && activeStore === 'leypart' ? 'Leypart' : 'Mahindra';
+    obRows.push({ part_no: '', description: '', brand: defaultMake, make: defaultMake, hsn: '', out_of_stock_date: '', gst: 18.0, qty: 1 });
+    const newIdx = obRows.length - 1;
+    renderObRows(focus ? `ob-pno-${newIdx}` : null);
+}
+
+function renderObRows(focusId) {
     let html = '';
     obRows.forEach((r, i) => {
         const makeVal = r.make || r.brand || (typeof activeStore !== 'undefined' && activeStore === 'leypart' ? 'Leypart' : 'Mahindra');
-        html += `<tr>
+        html += `<tr id="ob-row-${i}">
             <td style="position:relative;">
-                <input id="ob-inp-${i}" value="${r.part_no}"
-                    oninput="acSearch(this,document.getElementById('ob-ac-${i}'),d=>{obRows[${i}].part_no=d.part_no;obRows[${i}].description=d.description;obRows[${i}].brand=d.brand||d.make||'Mahindra';obRows[${i}].make=obRows[${i}].brand;obRows[${i}].hsn=d.hsn;obRows[${i}].gst=d.gst||18.0;renderObRows();})"
+                <input id="ob-pno-${i}" value="${r.part_no || ''}"
+                    oninput="acSearch(this,document.getElementById('ob-ac-${i}'),d=>{obRows[${i}].part_no=d.part_no;obRows[${i}].description=d.description;obRows[${i}].brand=d.brand||d.make||'Mahindra';obRows[${i}].make=obRows[${i}].brand;obRows[${i}].hsn=d.hsn;obRows[${i}].gst=d.gst||18.0;renderObRows('ob-qty-${i}');})"
                     onblur="obRows[${i}].part_no=this.value.trim().toUpperCase();this.value=obRows[${i}].part_no;if(obRows[${i}].part_no)fetchObDetails(${i});"
+                    onkeydown="handleRowKey(event, 'ob', ${i}, 'pno')"
                     class="q-table-input" placeholder="Part No or search…">
                 <div id="ob-ac-${i}" class="ac-list"></div>
             </td>
             <td>
-                <input type="text" value="${r.description}"
-                    onchange="obRows[${i}].description = this.value; renderObRows();"
+                <input type="text" id="ob-desc-${i}" value="${r.description || ''}"
+                    oninput="obRows[${i}].description = this.value;"
+                    onkeydown="handleRowKey(event, 'ob', ${i}, 'desc')"
                     class="q-table-input" placeholder="Description">
             </td>
             <td>
-                <input type="text" value="${makeVal}"
-                    onchange="obRows[${i}].brand = this.value; obRows[${i}].make = this.value; renderObRows();"
+                <input type="text" id="ob-make-${i}" value="${makeVal}"
+                    oninput="obRows[${i}].brand = this.value; obRows[${i}].make = this.value;"
+                    onkeydown="handleRowKey(event, 'ob', ${i}, 'make')"
                     class="q-table-input" placeholder="Make (Mahindra/Leypart)" style="width:130px;">
             </td>
             <td>
-                <input type="text" value="${r.hsn}"
-                    onchange="obRows[${i}].hsn = this.value; renderObRows();"
+                <input type="text" id="ob-hsn-${i}" value="${r.hsn || ''}"
+                    oninput="obRows[${i}].hsn = this.value;"
+                    onkeydown="handleRowKey(event, 'ob', ${i}, 'hsn')"
                     class="q-table-input" placeholder="HSN" style="width:100px;">
             </td>
             <td>
-                <input type="text" value="${r.out_of_stock_date || ''}"
-                    onchange="obRows[${i}].out_of_stock_date = this.value; renderObRows();"
+                <input type="text" id="ob-date-${i}" value="${r.out_of_stock_date || ''}"
+                    oninput="obRows[${i}].out_of_stock_date = this.value;"
+                    onkeydown="handleRowKey(event, 'ob', ${i}, 'date')"
                     class="q-table-input" placeholder="Out of Stock Date" style="width:130px;">
             </td>
             <td>
-                <input type="number" value="${r.qty}" min="1"
-                    onchange="obRows[${i}].qty = parseInt(this.value)||1; renderObRows();"
+                <input type="number" id="ob-qty-${i}" value="${r.qty || 1}" min="1"
+                    oninput="obRows[${i}].qty = parseInt(this.value)||1;"
+                    onkeydown="handleRowKey(event, 'ob', ${i}, 'qty')"
                     class="q-table-input" style="width:70px;">
             </td>
             <td style="text-align:center;">
-                <button onclick="obRows.splice(${i},1);renderObRows()" class="btn btn-ghost btn-sm">✕</button>
+                <button onclick="obRows.splice(${i},1);renderObRows()" class="btn btn-ghost btn-sm" tabindex="-1">✕</button>
             </td>
         </tr>`;
     });
     document.getElementById('ob_body').innerHTML = html;
+    if (focusId) {
+        setTimeout(() => {
+            const el = document.getElementById(focusId);
+            if (el) el.focus();
+        }, 10);
+    }
 }
 
 async function fetchObDetails(i) {
