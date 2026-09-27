@@ -1798,6 +1798,7 @@
                                 <th>Make</th>
                                 <th>HSN</th>
                                 <th style="text-align:center;">Rack Code</th>
+                                <th style="text-align:center;">Store Location</th>
                                 <th>GST %</th>
                                 <th>Qty</th>
                                 <th>Purchase Rate (₹)</th>
@@ -1819,6 +1820,13 @@
                                           title="Click to edit rack code">
                                         📍 <span id="loc-text-{{p.id}}">{% if p.location %}{{ p.location }}{% else %}+ Set Rack{% endif %}</span> ✏️
                                     </span>
+                                </td>
+                                <td style="text-align:center;">
+                                    <select id="store-loc-{{p.id}}" onchange="updateStoreLocation({{p.id}}, this.value)"
+                                            style="padding:3px 8px; border-radius:12px; font-size:11px; font-weight:600; background:#f0fdf4; color:#166534; border:1px solid #bbf7d0; cursor:pointer; outline:none;">
+                                        <option value="Jasai" {% if (p.store_location or 'Jasai') == 'Jasai' %}selected{% endif %}>📍 Jasai</option>
+                                        <option value="Kalamboli" {% if p.store_location == 'Kalamboli' or p.store_location == 'Kalmboli' %}selected{% endif %}>📍 Kalamboli</option>
+                                    </select>
                                 </td>
                                 <td>{{ p.gst }}%</td>
                                 <td>
@@ -2148,6 +2156,30 @@ async function editLocation(productId, currentLoc) {
         }
     } catch (e) {
         alert('Network error: ' + e);
+    }
+}
+
+async function updateStoreLocation(productId, newStoreLoc) {
+    try {
+        const res = await fetch(`/update_store_location/${productId}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ store_location: newStoreLoc })
+        });
+        const data = await res.json();
+        if (data.ok) {
+            const selectEl = document.getElementById(`store-loc-${productId}`);
+            if (selectEl) {
+                selectEl.style.transition = 'transform 0.2s ease';
+                selectEl.style.transform = 'scale(1.08)';
+                setTimeout(() => { selectEl.style.transform = 'scale(1)'; }, 200);
+            }
+        } else {
+            alert('Failed to update store location: ' + (data.error || 'Unknown error'));
+        }
+    } catch (e) {
+        console.error('Error updating store location:', e);
+        alert('Network error updating store location');
     }
 }
 

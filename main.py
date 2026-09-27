@@ -158,13 +158,20 @@ def auto_import_inventory():
             ("vendor_mobile", "VARCHAR(50)"),
             ("vendor_gstin", "VARCHAR(50)"),
             ("vendor_email", "VARCHAR(255)"),
-            ("location", "VARCHAR(100)")
+            ("location", "VARCHAR(100)"),
+            ("store_location", "VARCHAR(100) DEFAULT 'Jasai'")
         ]:
             try:
                 db.execute(text(f"ALTER TABLE products ADD COLUMN {col} {col_type}"))
                 db.commit()
             except Exception:
                 db.rollback()
+
+        try:
+            db.execute(text("UPDATE products SET store_location = 'Jasai' WHERE store_location IS NULL OR store_location = ''"))
+            db.commit()
+        except Exception:
+            db.rollback()
 
         # ── 1. Import inventory.xlsx → products table ──
         count = db.execute(text("SELECT COUNT(*) FROM products")).scalar()
@@ -360,6 +367,7 @@ class Product(Base):
     discount = Column(Float)
     amount = Column(Float)
     location = Column(String(100), nullable=True, default="")
+    store_location = Column(String(100), nullable=True, default="Jasai")
     store = Column(String(50), default="mahindra", index=True)
     vendor_name = Column(String(255), nullable=True)
     vendor_address = Column(String(255), nullable=True)
@@ -552,7 +560,8 @@ def home(request: Request, page: int = 1, q: str = ""):
         query = query.filter(
             (func.upper(Product.part_no).like(f"%{q_clean}%")) |
             (func.upper(Product.description).like(f"%{q_clean}%")) |
-            (func.upper(Product.location).like(f"%{q_clean}%"))
+            (func.upper(Product.location).like(f"%{q_clean}%")) |
+            (func.upper(Product.store_location).like(f"%{q_clean}%"))
         )
 
     ordered_query = query.order_by(
@@ -901,6 +910,25 @@ async def update_product_location(product_id: int, request: Request):
         db.close()
 
 
+@app.post("/update_store_location/{product_id}")
+async def update_product_store_location(product_id: int, request: Request):
+    data = await request.json()
+    new_store_location = str(data.get("store_location", "Jasai")).strip()
+    db = SessionLocal()
+    try:
+        product = db.query(Product).filter(Product.id == product_id).first()
+        if not product:
+            return {"error": "Product not found"}
+        product.store_location = new_store_location
+        db.commit()
+        return {"ok": True, "store_location": new_store_location}
+    except Exception as e:
+        db.rollback()
+        return {"error": str(e)}
+    finally:
+        db.close()
+
+
 @app.get("/export_stock_excel")
 def export_stock_excel(request: Request, q: str = Query("")):
     active_store = get_active_store(request)
@@ -913,7 +941,8 @@ def export_stock_excel(request: Request, q: str = Query("")):
             query = query.filter(
                 (func.upper(Product.part_no).like(f"%{q_clean}%")) |
                 (func.upper(Product.description).like(f"%{q_clean}%")) |
-                (func.upper(Product.location).like(f"%{q_clean}%"))
+                (func.upper(Product.location).like(f"%{q_clean}%")) |
+                (func.upper(Product.store_location).like(f"%{q_clean}%"))
             )
         
         products = query.order_by(Product.part_no.asc()).all()
@@ -933,7 +962,7 @@ def export_stock_excel(request: Request, q: str = Query("")):
         headers = [
             "Part No", "Description", "Make", "HSN", "GST %", 
             "Quantity", "Stock Status", "Purchase Rate (₹)", 
-            "Discount %", "Taxable Amount (₹)", "Rack Code", "Vendor Name"
+            "Discount %", "Taxable Amount (₹)", "Rack Code", "Store Location", "Vendor Name"
         ]
         
         ws.append(headers)
@@ -989,6 +1018,7 @@ def export_stock_excel(request: Request, q: str = Query("")):
                 f"{discount}%",
                 round(amt, 2),
                 p.location or "Unassigned",
+                p.store_location or "Jasai",
                 p.vendor_name or ""
             ]
             ws.append(row_data)
@@ -1005,8 +1035,10 @@ def export_stock_excel(request: Request, q: str = Query("")):
             ws.cell(row=r_idx, column=9).alignment = Alignment(horizontal="right")
             ws.cell(row=r_idx, column=10).alignment = Alignment(horizontal="center")
             ws.cell(row=r_idx, column=11).alignment = Alignment(horizontal="left")
+            ws.cell(row=r_idx, column=12).alignment = Alignment(horizontal="center")
+            ws.cell(row=r_idx, column=13).alignment = Alignment(horizontal="left")
 
-            for col_idx in range(1, 12):
+            for col_idx in range(1, 14):
                 ws.cell(row=r_idx, column=col_idx).border = data_row_border
 
         ws.append([])
@@ -1434,6 +1466,7 @@ def get_price(request: Request, part_no: str):
         "brand": brand,
         "make": brand,
         "location": prod.location if (prod and prod.location) else "",
+        "store_location": prod.store_location if (prod and prod.store_location) else "Jasai",
         "vendor_name": prod.vendor_name if prod else "",
         "vendor_address": prod.vendor_address if prod else "",
         "vendor_mobile": prod.vendor_mobile if prod else "",
