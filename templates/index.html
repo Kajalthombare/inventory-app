@@ -2510,17 +2510,44 @@ function handleRowKey(e, type, index, field) {
     const fList = fieldsMap[type];
     if (!fList) return;
 
-    if (e.key === 'Tab' && !e.shiftKey) {
-        if (field === fList[fList.length - 1]) {
-            let rowArray, addFn;
-            if (type === 'q') { rowArray = qRows; addFn = addQRow; }
-            else if (type === 'inv') { rowArray = invRows; addFn = addInvRow; }
-            else if (type === 'ob') { rowArray = obRows; addFn = addObRow; }
-            else if (type === 'purchase') { rowArray = purchaseRows; addFn = addPurchaseRow; }
-            
-            if (rowArray && index === rowArray.length - 1) {
-                e.preventDefault();
-                addFn(true);
+    if (e.key === 'Tab') {
+        const currIdx = fList.indexOf(field);
+        if (currIdx === -1) return;
+
+        if (!e.shiftKey) {
+            // Forward Tab
+            e.preventDefault();
+            if (currIdx < fList.length - 1) {
+                const nextId = `${type}-${fList[currIdx + 1]}-${index}`;
+                const el = document.getElementById(nextId);
+                if (el) el.focus();
+            } else {
+                // On last field of the row -> move to next row or add row
+                let rowArray, addFn;
+                if (type === 'q') { rowArray = qRows; addFn = addQRow; }
+                else if (type === 'inv') { rowArray = invRows; addFn = addInvRow; }
+                else if (type === 'ob') { rowArray = obRows; addFn = addObRow; }
+                else if (type === 'purchase') { rowArray = purchaseRows; addFn = addPurchaseRow; }
+
+                if (rowArray && index < rowArray.length - 1) {
+                    const nextId = `${type}-${fList[0]}-${index + 1}`;
+                    const el = document.getElementById(nextId);
+                    if (el) el.focus();
+                } else if (addFn) {
+                    addFn(true);
+                }
+            }
+        } else {
+            // Backward Shift+Tab
+            e.preventDefault();
+            if (currIdx > 0) {
+                const prevId = `${type}-${fList[currIdx - 1]}-${index}`;
+                const el = document.getElementById(prevId);
+                if (el) el.focus();
+            } else if (index > 0) {
+                const prevId = `${type}-${fList[fList.length - 1]}-${index - 1}`;
+                const el = document.getElementById(prevId);
+                if (el) el.focus();
             }
         }
     } else if (e.key === 'Enter') {
@@ -2536,7 +2563,7 @@ function handleRowKey(e, type, index, field) {
             else if (type === 'inv') { rowArray = invRows; addFn = addInvRow; }
             else if (type === 'ob') { rowArray = obRows; addFn = addObRow; }
             else if (type === 'purchase') { rowArray = purchaseRows; addFn = addPurchaseRow; }
-            
+
             if (rowArray && index < rowArray.length - 1) {
                 const nextId = `${type}-${fList[0]}-${index + 1}`;
                 const el = document.getElementById(nextId);
@@ -2560,6 +2587,7 @@ function addQRow(focus = false){
 }
 
 function renderQRows(focusId){
+    const activeElId = focusId || (document.activeElement ? document.activeElement.id : null);
     let html = '', grand = 0;
     qRows.forEach((r, i) => {
         const rate = parseFloat(r.rate) || 0;
@@ -2622,9 +2650,9 @@ function renderQRows(focusId){
     });
     document.getElementById('q_body').innerHTML = html;
     document.getElementById('q_grand_total').textContent = grand.toFixed(2);
-    if (focusId) {
+    if (activeElId) {
         setTimeout(() => {
-            const el = document.getElementById(focusId);
+            const el = document.getElementById(activeElId);
             if (el) el.focus();
         }, 10);
     }
@@ -2655,14 +2683,35 @@ function updateQRowCalc(i) {
 }
 
 async function fetchQStock(i){
-    if (!qRows[i].part_no) return;
-    const d = await (await fetch(`/get_rate/${encodeURIComponent(qRows[i].part_no)}`)).json();
-    qRows[i].stock = d.stock || 0;
-    // Auto-fill description/rate/hsn from orders.csv if not already set
-    if (d.description) qRows[i].description = d.description;
-    if (d.rate && d.rate > 0) qRows[i].rate = d.rate;
-    if (d.hsn) qRows[i].hsn = d.hsn;
-    renderQRows();
+    if (!qRows[i] || !qRows[i].part_no) return;
+    try {
+        const res = await fetch(`/get_rate/${encodeURIComponent(qRows[i].part_no)}`);
+        const d = await res.json();
+        qRows[i].stock = d.stock || 0;
+        if (d.description) qRows[i].description = d.description;
+        if (d.rate && d.rate > 0) qRows[i].rate = d.rate;
+        if (d.hsn) qRows[i].hsn = d.hsn;
+
+        const descEl = document.getElementById(`q-desc-${i}`);
+        if (descEl && d.description) descEl.value = d.description;
+
+        const hsnEl = document.getElementById(`q-hsn-${i}`);
+        if (hsnEl && d.hsn) hsnEl.value = d.hsn;
+
+        const rateEl = document.getElementById(`q-rate-${i}`);
+        if (rateEl && d.rate > 0) rateEl.value = d.rate;
+
+        const stockEl = document.getElementById(`q-stock-${i}`);
+        if (stockEl) {
+            stockEl.innerHTML = qRows[i].part_no
+                ? (qRows[i].stock===0 ? `<span class="badge badge-warning">?</span>` : qRows[i].stock<5 ? `<span class="badge badge-warning">${qRows[i].stock}</span>` : `<span class="badge badge-success">${qRows[i].stock}</span>`)
+                : '—';
+        }
+
+        updateQRowCalc(i);
+    } catch(e) {
+        console.error('fetchQStock error:', e);
+    }
 }
 
 async function downloadQuotationPDF(){
