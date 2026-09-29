@@ -204,7 +204,7 @@ tr:nth-child(even) {
                 </span>
             </td>
 
-            <td class="text-center">{{ item.make or item.brand or 'Mahindra' }}</td>
+            <td class="text-center">{{ item.make or item.brand or ('Multi' if (seller and (seller.store == 'divya' or 'DIVYA' in (seller.name or '').upper())) else 'Mahindra') }}</td>
             <td class="text-center">{{ item.hsn }}</td>
             <td class="text-center">{{ item.qty | int }}</td>
             <td class="text-right nowrap">₹ {{ "%.2f"|format(item.rate) }}</td>

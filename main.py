@@ -1888,12 +1888,15 @@ async def save_quotation(request: Request):
     )
     db.add(quot)
     db.flush()
+    default_make = "Multi" if active_store in ["divya", "leypart"] else "Mahindra"
     for r in rows:
         sub = r["rate"] * r["qty"] * (1 - r.get("discount", 0)/100)
+        make_val = r.get("make") or r.get("brand") or default_make
         db.add(QuotationItem(
             quotation_id=quot.id,
             part_no=r.get("part_no", ""),
             description=r.get("description", ""),
+            brand=make_val,
             rate=r["rate"],
             qty=r["qty"],
             discount=r.get("discount", 0),
@@ -1983,12 +1986,15 @@ async def update_quotation(q_id: int, request: Request):
     quot.total_amount = round(total_amount, 2)
     quot.grand_total = round(grand_total, 2)
 
+    default_make = "Multi" if active_store in ["divya", "leypart"] else "Mahindra"
     for r in rows:
         sub = r["rate"] * r["qty"] * (1 - r.get("discount", 0)/100)
+        make_val = r.get("make") or r.get("brand") or default_make
         db.add(QuotationItem(
             quotation_id=quot.id,
             part_no=r.get("part_no", ""),
             description=r.get("description", ""),
+            brand=make_val,
             rate=float(r["rate"]),
             qty=int(r["qty"]),
             discount=float(r.get("discount", 0)),
@@ -2206,15 +2212,20 @@ async def download_quotation_pdf(request: Request):
     customer_mobile = data.get("customer_mobile", "")
     customer_email = data.get("customer_email", "")
 
+    active_store = get_active_store(request)
+    default_make = "Multi" if active_store in ["divya", "leypart"] else "Mahindra"
     items, subtotal = [], 0
     savings = 0.0
     for r in rows:
         sub = r["rate"] * r["qty"]
         disc = sub * (r.get("discount", 0) / 100)
         after = sub - disc
+        make_val = r.get("make") or r.get("brand") or default_make
         items.append({
             "part_no": r.get("part_no", ""),
             "description": r.get("description", ""),
+            "make": make_val,
+            "brand": make_val,
             "hsn": r.get("hsn", ""),
             "rate": r["rate"],
             "qty": r["qty"],
@@ -2483,11 +2494,13 @@ def view_quotation_saved(q_id: int, request: Request):
         return HTMLResponse("<h1>Proforma Invoice not found</h1>", status_code=404)
         
     items_rows = db.execute(text("""
-        SELECT part_no, description, rate, qty, discount, amount, hsn
+        SELECT part_no, description, rate, qty, discount, amount, hsn, brand
         FROM quotation_items WHERE quotation_id = :qid
     """), {"qid": q_id}).fetchall()
     db.close()
 
+    active_store = getattr(quotation, 'store', get_active_store(request))
+    default_make = "Multi" if active_store in ["divya", "leypart"] else "Mahindra"
     items = []
     subtotal = 0
     savings = 0.0
@@ -2495,9 +2508,12 @@ def view_quotation_saved(q_id: int, request: Request):
         sub = r.rate * r.qty
         disc = sub * ((r.discount or 0) / 100)
         taxable = sub - disc
+        make_val = getattr(r, 'brand', None) or default_make
         items.append({
             "part_no": r.part_no,
             "description": r.description,
+            "make": make_val,
+            "brand": make_val,
             "hsn": r.hsn,
             "rate": r.rate,
             "qty": r.qty,
@@ -2549,11 +2565,13 @@ def download_quotation_pdf_file(q_id: int, request: Request):
         return HTMLResponse("<h1>Proforma Invoice not found</h1>", status_code=404)
         
     items_rows = db.execute(text("""
-        SELECT part_no, description, rate, qty, discount, amount, hsn
+        SELECT part_no, description, rate, qty, discount, amount, hsn, brand
         FROM quotation_items WHERE quotation_id = :qid
     """), {"qid": q_id}).fetchall()
     db.close()
 
+    active_store = getattr(quotation, 'store', get_active_store(request))
+    default_make = "Multi" if active_store in ["divya", "leypart"] else "Mahindra"
     items = []
     subtotal = 0
     savings = 0.0
@@ -2561,9 +2579,12 @@ def download_quotation_pdf_file(q_id: int, request: Request):
         sub = r.rate * r.qty
         disc = sub * ((r.discount or 0) / 100)
         taxable = sub - disc
+        make_val = getattr(r, 'brand', None) or default_make
         items.append({
             "part_no": r.part_no,
             "description": r.description,
+            "make": make_val,
+            "brand": make_val,
             "hsn": r.hsn,
             "rate": r.rate,
             "qty": r.qty,
@@ -2764,11 +2785,13 @@ def view_invoice_saved(i_id: int, request: Request):
         return HTMLResponse("<h1>Tax Invoice not found</h1>", status_code=404)
         
     items_rows = db.execute(text("""
-        SELECT part_no, description, rate, quantity, amount, hsn
+        SELECT part_no, description, rate, quantity, amount, hsn, brand
         FROM invoice_items WHERE invoice_id = :iid
     """), {"iid": i_id}).fetchall()
     db.close()
 
+    active_store = getattr(invoice, 'store', get_active_store(request))
+    default_make = "Multi" if active_store in ["divya", "leypart"] else "Mahindra"
     items = []
     subtotal = 0
     savings = 0.0
@@ -2777,9 +2800,12 @@ def view_invoice_saved(i_id: int, request: Request):
         taxable = r.amount
         disc_amt = max(0.0, sub - taxable)
         disc_pct = round((disc_amt / sub) * 100, 2) if sub > 0 else 0.0
+        make_val = getattr(r, 'brand', None) or default_make
         items.append({
             "part_no": r.part_no,
             "description": r.description,
+            "make": make_val,
+            "brand": make_val,
             "hsn": r.hsn,
             "rate": r.rate,
             "qty": r.quantity,
@@ -3408,8 +3434,8 @@ async def download_pdf(request: Request):
         for it in items:
             db.execute(text("""
                 INSERT INTO invoice_items 
-                (invoice_id, part_no, description, quantity, rate, amount, hsn, purchase_rate)
-                VALUES (:iid, :p, :d, :q, :r, :amt, :hsn, :prate)
+                (invoice_id, part_no, description, quantity, rate, amount, hsn, purchase_rate, brand)
+                VALUES (:iid, :p, :d, :q, :r, :amt, :hsn, :prate, :brand)
             """), {
                 "iid": invoice_id,
                 "p": it["part_no"],
@@ -3418,7 +3444,8 @@ async def download_pdf(request: Request):
                 "r": it["rate"],
                 "amt": it["taxable"],
                 "hsn": it["hsn"],
-                "prate": it["purchase_rate"]
+                "prate": it["purchase_rate"],
+                "brand": it.get("brand") or it.get("make") or ("Multi" if active_store in ["divya", "leypart"] else "Mahindra")
             })
 
         db.commit()
