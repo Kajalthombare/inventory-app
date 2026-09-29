@@ -1734,13 +1734,91 @@ async def price_master_update(item_id: int, request: Request):
 
 
 
-@app.post("/price_master/delete/{item_id}")
-def price_master_delete(item_id: int):
+@app.post("/upload_price_master")
+def upload_price_master(request: Request, file: UploadFile = File(...), mode: str = Form("append")):
+    active_store = get_active_store(request)
     db = SessionLocal()
-    db.query(OrderItems).filter(OrderItems.id == item_id).delete()
-    db.commit()
-    db.close()
-    return {"ok": True}
+    try:
+        if file.filename.endswith(".csv"):
+            import pandas as pd
+            df = pd.read_csv(file.file, dtype=str, on_bad_lines="skip")
+            if len(df.columns) <= 1:
+                file.file.seek(0)
+                df = pd.read_csv(file.file, dtype=str, sep="\t", on_bad_lines="skip")
+        else:
+            import pandas as pd
+            df = pd.read_excel(file.file, engine="openpyxl", dtype=str)
+
+        df.columns = [col.strip() for col in df.columns]
+        df = df.fillna("")
+
+        if mode == "replace":
+            db.execute(text("DELETE FROM order_items WHERE store = :store"), {"store": active_store})
+            db.commit()
+
+        imported_count = 0
+        default_brand = "Leypart" if active_store == "divya" else "Mahindra"
+        for _, row in df.iterrows():
+            part_no = str(
+                row.get("Part No") or row.get("Part Number") or row.get("PART NO") or row.get("PART NUMBER") or row.get("part_no") or ""
+            ).strip()
+            if not part_no:
+                continue
+
+            desc = str(
+                row.get("Description") or row.get("Part Desc") or row.get("Part Description") or row.get("PART DESC") or row.get("description") or ""
+            ).strip()
+
+            hsn = str(
+                row.get("HSN") or row.get("HSN Code") or row.get("HSN CODE") or row.get("hsn") or ""
+            ).strip()
+
+            raw_rate = str(
+                row.get("List Price") or row.get("LIST PRICE") or row.get("List") or row.get("LIST") or row.get("Rate") or row.get("RATE") or ""
+            ).replace(",", "").strip()
+
+            raw_mrp = str(
+                row.get("MRP") or row.get("mrp") or row.get("Price") or row.get("PRICE") or ""
+            ).replace(",", "").strip()
+
+            try:
+                list_p = float(raw_rate or 0)
+            except Exception:
+                list_p = 0.0
+
+            try:
+                mrp_p = float(raw_mrp or 0)
+            except Exception:
+                mrp_p = 0.0
+
+            if list_p <= 0: list_p = mrp_p
+            if mrp_p <= 0: mrp_p = list_p
+
+            brand = str(
+                row.get("Make") or row.get("MAKE") or row.get("Brand") or row.get("BRAND") or row.get("brand") or ""
+            ).strip() or default_brand
+
+            existing = db.query(OrderItems).filter(OrderItems.part_no == part_no, OrderItems.store == active_store).first()
+            if existing:
+                existing.description = desc or existing.description
+                existing.hsn = hsn or existing.hsn
+                existing.list_price = list_p
+                existing.mrp = mrp_p
+                existing.brand = brand
+            else:
+                new_item = OrderItems(
+                    part_no=part_no, description=desc, hsn=hsn,
+                    list_price=list_p, mrp=mrp_p, brand=brand, store=active_store
+                )
+                db.add(new_item)
+            imported_count += 1
+
+        db.commit()
+        db.close()
+        return {"status": "success", "message": f"Successfully imported {imported_count:,} products into Price Master"}
+    except Exception as e:
+        db.close()
+        return {"status": "error", "message": f"Failed to upload Price Master: {str(e)}"}
 
 # ---------------- QUOTATION (no stock change) ----------------
 

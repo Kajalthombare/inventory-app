@@ -1643,11 +1643,25 @@
             <div class="section-header">
                 <div class="section-title">🏷 Price Master / Product Directory</div>
                 <div style="display:flex;gap:8px;">
-                    <button onclick="reimportOrders(event)" class="btn btn-ghost btn-sm" style="border:1px solid var(--border);">🔄 Reload CSV Price List</button>
+                    <button onclick="togglePMUploadForm()" class="btn btn-ghost btn-sm" style="border:1px solid var(--border);">📤 Upload CSV/Excel</button>
+                    <button onclick="reimportOrders(event)" class="btn btn-ghost btn-sm" style="border:1px solid var(--border);">🔄 Reload Saved CSV</button>
                     <button onclick="showAddPMForm()" class="btn btn-primary btn-sm">+ Add New Product</button>
                 </div>
             </div>
             <div class="section-body">
+                <!-- Upload Price Master CSV/Excel Panel -->
+                <div id="pm-upload-form" style="display:none;background:#f0fdf4;padding:16px;border-radius:10px;border:1px solid #bbf7d0;margin-bottom:16px;">
+                    <div style="font-weight:600;margin-bottom:8px;color:#166534;">📤 Upload Price Master CSV / Excel File</div>
+                    <form id="pmUploadForm" onsubmit="uploadPMFile(event)" style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
+                        <input type="file" name="file" accept=".csv,.xlsx,.xls" required style="font-size:13px;">
+                        <select name="mode" class="form-select" style="max-width:180px;font-size:12px;">
+                            <option value="append">Append / Update Existing</option>
+                            <option value="replace">Replace All Products</option>
+                        </select>
+                        <button type="submit" class="btn btn-success btn-sm">Upload & Sync</button>
+                        <button type="button" onclick="togglePMUploadForm()" class="btn btn-ghost btn-sm">Cancel</button>
+                    </form>
+                </div>
                 <!-- Add form -->
                 <div id="pm-add-form" style="display:none;background:#f8fafc;padding:16px;border-radius:10px;border:1px solid var(--border);margin-bottom:16px;">
                     <div class="form-row" style="gap:12px;align-items:flex-end;">
@@ -3185,6 +3199,33 @@ async function fetchPM(){
 
 function pmPrevPage(){ if(pmPage>1){ pmPage--; fetchPM(); } }
 function pmNextPage(){ pmPage++; fetchPM(); }
+
+function togglePMUploadForm(){
+    const el = document.getElementById('pm-upload-form');
+    if (el) el.style.display = (el.style.display === 'none') ? 'block' : 'none';
+}
+
+async function uploadPMFile(e){
+    e.preventDefault();
+    const formData = new FormData(document.getElementById('pmUploadForm'));
+    const btn = e.target.querySelector('button[type="submit"]');
+    if (btn) { btn.disabled = true; btn.textContent = '⏳ Uploading...'; }
+    try {
+        const res = await fetch('/upload_price_master', { method: 'POST', body: formData });
+        const data = await res.json();
+        if (data.status === 'success') {
+            alert(data.message);
+            togglePMUploadForm();
+            await fetchPM();
+        } else {
+            alert('Error: ' + (data.message || 'Upload failed'));
+        }
+    } catch(err) {
+        alert('Upload failed: ' + err.message);
+    } finally {
+        if (btn) { btn.disabled = false; btn.textContent = 'Upload & Sync'; }
+    }
+}
 
 function showAddPMForm(){ document.getElementById('pm-add-form').style.display='block'; }
 function hidePMForm(){
