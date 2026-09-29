@@ -269,7 +269,7 @@ def sync_order_csv_files(db, force=False):
 
     nan_count = db.execute(text("SELECT COUNT(*) FROM order_items WHERE part_no = 'nan' OR description = 'nan' OR part_no IS NULL OR part_no = ''")).scalar() or 0
     divya_count = db.execute(text("SELECT COUNT(*) FROM order_items WHERE store = 'divya'")).scalar() or 0
-    zero_list_price_count = db.execute(text("SELECT COUNT(*) FROM order_items WHERE store = 'divya' AND (list_price IS NULL OR list_price = 0 OR list_price = mrp)")).scalar() or 0
+    zero_list_price_count = db.execute(text("SELECT COUNT(*) FROM order_items WHERE store = 'divya' AND (list_price IS NULL OR list_price = 0 OR list_price = mrp OR brand != 'Multi')")).scalar() or 0
 
     if force or oi_count < 1000 or nan_count > 0 or divya_count == 0 or zero_list_price_count > 10:
         print(f"⏳ Syncing {len(csv_files)} CSV file(s) into order_items ({oi_count} total in DB, {divya_count} for divya)...")
@@ -326,7 +326,7 @@ def sync_order_csv_files(db, force=False):
                     store_val = _clean(row.get("store") or row.get("Store")) or default_store
                     brand = _clean(
                         row.get("Brand") or row.get("BRAND") or row.get("brand") or row.get("Brand Name")
-                    ) or ("Leypart" if store_val == "divya" else "Mahindra")
+                    ) or ("Multi" if store_val in ["divya", "leypart"] else "Mahindra")
 
                     batch.append({
                         "pn":   part_no,
@@ -914,7 +914,7 @@ def upload_stock(request: Request, file: UploadFile = File(...), mode: str = For
                     rate=rate,
                     discount=discount,
                     amount=round(amount, 2),
-                    brand=brand or ("Leypart" if active_store == "leypart" else "Mahindra"),
+                    brand=brand or ("Multi" if active_store in ["divya", "leypart"] else "Mahindra"),
                     out_of_stock_date=datetime.utcnow() if qty <= 0 else None,
                     location=location,
                     store=active_store,
@@ -1504,7 +1504,7 @@ def get_price(request: Request, part_no: str):
         description = (prod.description if prod and prod.description else "") or (price.description if price else "")
         hsn = (prod.hsn if prod and prod.hsn else "") or (price.hsn if price else "")
 
-    brand = prod.brand if (prod and prod.brand) else (price.brand if (price and getattr(price, "brand", None)) else ("Leypart" if active_store == "leypart" else "Mahindra"))
+    brand = prod.brand if (prod and prod.brand) else (price.brand if (price and getattr(price, "brand", None)) else ("Multi" if active_store in ["divya", "leypart"] else "Mahindra"))
 
     return {
         "rate": rate,
@@ -1587,7 +1587,7 @@ def get_rate(request: Request, part_no: str):
         description = item.description if item else (product.description if product else "")
         hsn = str(item.hsn) if item else (product.hsn if product else "")
 
-    brand = product.brand if (product and product.brand) else (item.brand if (item and getattr(item, "brand", None)) else ("Leypart" if active_store == "leypart" else "Mahindra"))
+    brand = product.brand if (product and product.brand) else (item.brand if (item and getattr(item, "brand", None)) else ("Multi" if active_store in ["divya", "leypart"] else "Mahindra"))
 
     db.close()
     return {"rate": rate, "description": description, "hsn": hsn, "stock": stock, "brand": brand, "make": brand}
@@ -1611,7 +1611,7 @@ def search_parts(request: Request, q: str = ""):
     active_store = get_active_store(request)
     db = SessionLocal()
     q = q.strip().upper()
-    default_brand = "Leypart" if active_store == "divya" else "Mahindra"
+    default_brand = "Multi" if active_store in ["divya", "leypart"] else "Mahindra"
     results = db.execute(text("""
         SELECT part_no, description, list_price, mrp, hsn, brand
         FROM order_items
@@ -1654,7 +1654,7 @@ def price_master_list(request: Request, page: int = 1, q: str = ""):
     per_page = 100
     offset = (page - 1) * per_page
     q_str = q.strip().upper()
-    default_brand = "Leypart" if active_store == "divya" else "Mahindra"
+    default_brand = "Multi" if active_store in ["divya", "leypart"] else "Mahindra"
     
     if q_str:
         q_clean = f"%{q_str}%"
@@ -1757,7 +1757,7 @@ def upload_price_master(request: Request, file: UploadFile = File(...), mode: st
             db.commit()
 
         imported_count = 0
-        default_brand = "Leypart" if active_store == "divya" else "Mahindra"
+        default_brand = "Multi" if active_store in ["divya", "leypart"] else "Mahindra"
         for _, row in df.iterrows():
             part_no = str(
                 row.get("Part No") or row.get("Part Number") or row.get("PART NO") or row.get("PART NUMBER") or row.get("part_no") or ""
@@ -3024,7 +3024,7 @@ def get_out_of_stock_products(request: Request):
             p.out_of_stock_date = datetime.utcnow()
             db.commit()
         
-        default_brand = p.brand or ("Leypart" if active_store == "leypart" else "Mahindra")
+        default_brand = p.brand or ("Multi" if active_store in ["divya", "leypart"] else "Mahindra")
         result.append({
             "part_no": p.part_no,
             "description": p.description,
@@ -3047,7 +3047,7 @@ async def download_order_book_pdf(request: Request):
     # Exclude rates and discounts as requested. Show sl, part_no, description, make, hsn, out_of_stock_date, qty
     items = []
     for r in rows:
-        default_make = r.get("make") or r.get("brand") or ("Leypart" if active_store == "leypart" else "Mahindra")
+        default_make = r.get("make") or r.get("brand") or ("Multi" if active_store in ["divya", "leypart"] else "Mahindra")
         items.append({
             "part_no": r.get("part_no", ""),
             "description": r.get("description", ""),
@@ -3153,7 +3153,7 @@ async def download_order_book_excel(request: Request):
         cell_desc = ws.cell(row=row_idx, column=2, value=part_desc)
         cell_desc.alignment = Alignment(wrap_text=True, vertical="center")
         
-        make_val = item.get("make") or item.get("brand") or ("Leypart" if active_store == "leypart" else "Mahindra")
+        make_val = item.get("make") or item.get("brand") or ("Multi" if active_store in ["divya", "leypart"] else "Mahindra")
         ws.cell(row=row_idx, column=3, value=make_val).alignment = Alignment(horizontal="center")
         ws.cell(row=row_idx, column=4, value=item.get("hsn", "") or "—").alignment = Alignment(horizontal="center")
         ws.cell(row=row_idx, column=5, value=item.get("out_of_stock_date", "") or "—").alignment = Alignment(horizontal="center")
@@ -3314,7 +3314,7 @@ async def download_pdf(request: Request):
             disc = float(row.get("discount", 0))
 
             purchase_rate = 0.0
-            make_val = row.get("make") or row.get("brand") or (product.brand if product else ("Leypart" if active_store == "leypart" else "Mahindra"))
+            make_val = row.get("make") or row.get("brand") or (product.brand if product else ("Multi" if active_store in ["divya", "leypart"] else "Mahindra"))
             if product:
                 purchase_rate = float(product.rate or 0.0)
                 product.quantity -= qty

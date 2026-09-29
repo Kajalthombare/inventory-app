@@ -1830,7 +1830,7 @@
                             <tr>
                                 <td style="font-weight:600;">{{ p.part_no }}</td>
                                 <td style="color:var(--text-muted);">{{ p.description }}</td>
-                                <td><span class="badge" style="background:#f3e8ff;color:#6b21a8;border:1px solid #d8b4fe;padding:2px 8px;border-radius:12px;font-size:11px;font-weight:600;">{{ p.brand if p.brand else ("Leypart" if p.store == "leypart" else "Mahindra") }}</span></td>
+                                <td><span class="badge" style="background:#f3e8ff;color:#6b21a8;border:1px solid #d8b4fe;padding:2px 8px;border-radius:12px;font-size:11px;font-weight:600;">{{ p.brand if p.brand else ("Multi" if (p.store == "leypart" or p.store == "divya") else "Mahindra") }}</span></td>
                                 <td>{{ p.hsn }}</td>
                                 <td style="text-align:center;">
                                     <span id="loc-badge-{{p.id}}" onclick="editLocation({{p.id}}, '{{ (p.location or '')|e }}')" 
@@ -1922,7 +1922,7 @@ document.getElementById('search').addEventListener('keypress', function(e){
 let purchaseRows = [];
 
 function addPurchaseRow(focus = false) {
-    const defaultMake = typeof activeStore !== 'undefined' && activeStore === 'leypart' ? 'Leypart' : 'Mahindra';
+    const defaultMake = (typeof activeStore !== 'undefined' && (activeStore === 'leypart' || activeStore === 'divya')) ? 'Multi' : 'Mahindra';
     purchaseRows.push({ part_no: '', description: '', brand: defaultMake, make: defaultMake, hsn: '', location: '', gst: 18.0, qty: 1, rate: 0.0, discount: 0.0 });
     const newIdx = purchaseRows.length - 1;
     renderPurchaseRows(focus ? `purchase-pno-${newIdx}` : null);
@@ -1931,7 +1931,7 @@ function addPurchaseRow(focus = false) {
 function renderPurchaseRows(focusId) {
     let html = '', grand = 0;
     purchaseRows.forEach((r, i) => {
-        const makeVal = r.make || r.brand || (typeof activeStore !== 'undefined' && activeStore === 'leypart' ? 'Leypart' : 'Mahindra');
+        const makeVal = r.make || r.brand || ((typeof activeStore !== 'undefined' && (activeStore === 'leypart' || activeStore === 'divya')) ? 'Multi' : 'Mahindra');
         const rate = parseFloat(r.rate) || 0;
         const qty = parseFloat(r.qty) || 1;
         const gst = parseFloat(r.gst) !== undefined && !isNaN(parseFloat(r.gst)) ? parseFloat(r.gst) : 18.0;
@@ -3357,8 +3357,8 @@ async function refreshOrderBook() {
     obRows = data.map(p => ({
         part_no: p.part_no || '',
         description: p.description || '',
-        brand: p.brand || p.make || (typeof activeStore !== 'undefined' && activeStore === 'leypart' ? 'Leypart' : 'Mahindra'),
-        make: p.make || p.brand || (typeof activeStore !== 'undefined' && activeStore === 'leypart' ? 'Leypart' : 'Mahindra'),
+        brand: p.brand || p.make || ((typeof activeStore !== 'undefined' && (activeStore === 'leypart' || activeStore === 'divya')) ? 'Multi' : 'Mahindra'),
+        make: p.make || p.brand || ((typeof activeStore !== 'undefined' && (activeStore === 'leypart' || activeStore === 'divya')) ? 'Multi' : 'Mahindra'),
         hsn: p.hsn || '',
         out_of_stock_date: p.out_of_stock_date || '',
         gst: p.gst || 18.0,
@@ -3368,7 +3368,7 @@ async function refreshOrderBook() {
 }
 
 function addObRow(focus = false) {
-    const defaultMake = typeof activeStore !== 'undefined' && activeStore === 'leypart' ? 'Leypart' : 'Mahindra';
+    const defaultMake = (typeof activeStore !== 'undefined' && (activeStore === 'leypart' || activeStore === 'divya')) ? 'Multi' : 'Mahindra';
     obRows.push({ part_no: '', description: '', brand: defaultMake, make: defaultMake, hsn: '', out_of_stock_date: '', gst: 18.0, qty: 1 });
     const newIdx = obRows.length - 1;
     renderObRows(focus ? `ob-pno-${newIdx}` : null);
@@ -3377,7 +3377,7 @@ function addObRow(focus = false) {
 function renderObRows(focusId) {
     let html = '';
     obRows.forEach((r, i) => {
-        const makeVal = r.make || r.brand || (typeof activeStore !== 'undefined' && activeStore === 'leypart' ? 'Leypart' : 'Mahindra');
+        const makeVal = r.make || r.brand || ((typeof activeStore !== 'undefined' && (activeStore === 'leypart' || activeStore === 'divya')) ? 'Multi' : 'Mahindra');
         html += `<tr id="ob-row-${i}">
             <td style="position:relative;">
                 <input id="ob-pno-${i}" value="${r.part_no || ''}"
@@ -3454,7 +3454,7 @@ async function fetchObDetails(i) {
 }
 
 function openObNewItemModal(rowIndex, partNo = '') {
-    const defaultMake = typeof activeStore !== 'undefined' && activeStore === 'leypart' ? 'Leypart' : 'Mahindra';
+    const defaultMake = (typeof activeStore !== 'undefined' && (activeStore === 'leypart' || activeStore === 'divya')) ? 'Multi' : 'Mahindra';
     if (rowIndex >= obRows.length) {
         obRows.push({ part_no: partNo, description: '', brand: defaultMake, make: defaultMake, hsn: '', out_of_stock_date: '', gst: 18.0, qty: 1 });
         rowIndex = obRows.length - 1;
@@ -3516,7 +3516,7 @@ async function saveObNewItem() {
 }
 
 function addObRow() {
-    const defaultMake = typeof activeStore !== 'undefined' && activeStore === 'leypart' ? 'Leypart' : 'Mahindra';
+    const defaultMake = (typeof activeStore !== 'undefined' && (activeStore === 'leypart' || activeStore === 'divya')) ? 'Multi' : 'Mahindra';
     obRows.push({ part_no: '', description: '', brand: defaultMake, make: defaultMake, hsn: '', out_of_stock_date: '', gst: 18.0, qty: 1 });
     renderObRows();
 }
