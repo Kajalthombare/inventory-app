@@ -261,9 +261,10 @@ def sync_order_csv_files(db, force=False):
         return "" if s.lower() == "nan" else s
 
     nan_count = db.execute(text("SELECT COUNT(*) FROM order_items WHERE part_no = 'nan' OR description = 'nan' OR part_no IS NULL OR part_no = ''")).scalar() or 0
+    divya_count = db.execute(text("SELECT COUNT(*) FROM order_items WHERE store = 'divya'")).scalar() or 0
 
-    if force or oi_count < 1000 or nan_count > 0:
-        print(f"⏳ Syncing {len(csv_files)} CSV file(s) into order_items ({oi_count} in DB)...")
+    if force or oi_count < 1000 or nan_count > 0 or divya_count == 0:
+        print(f"⏳ Syncing {len(csv_files)} CSV file(s) into order_items ({oi_count} total in DB, {divya_count} for divya)...")
         db.execute(text("DELETE FROM order_items"))
         db.commit()
         batch = []
@@ -1584,17 +1585,18 @@ def search_parts(request: Request, q: str = ""):
     active_store = get_active_store(request)
     db = SessionLocal()
     q = q.strip().upper()
+    default_brand = "Leypart" if active_store == "divya" else "Mahindra"
     results = db.execute(text("""
         SELECT part_no, description, mrp, hsn, brand
         FROM order_items
-        WHERE store = :store AND (UPPER(part_no) LIKE :q OR UPPER(description) LIKE :q)
+        WHERE store = :store AND (UPPER(part_no) LIKE :q OR UPPER(COALESCE(description, '')) LIKE :q)
         LIMIT 20
     """), {"q": f"%{q}%", "store": active_store}).fetchall()
     db.close()
     return [{"part_no": r.part_no, "description": r.description,
              "rate": float(r.mrp or 0), "hsn": str(r.hsn or ""),
-             "brand": getattr(r, "brand", "Mahindra") or "Mahindra",
-             "make": getattr(r, "brand", "Mahindra") or "Mahindra"} for r in results]
+             "brand": getattr(r, "brand", default_brand) or default_brand,
+             "make": getattr(r, "brand", default_brand) or default_brand} for r in results]
 
 @app.get("/search_vendors")
 def search_vendors(request: Request, q: str = ""):
@@ -1624,22 +1626,39 @@ def price_master_list(request: Request, page: int = 1, q: str = ""):
     db = SessionLocal()
     per_page = 100
     offset = (page - 1) * per_page
-    q_clean = f"%{q.strip().upper()}%"
-    rows = db.execute(text("""
-        SELECT id, part_no, description, hsn, mrp, brand
-        FROM order_items
-        WHERE store = :store AND (UPPER(part_no) LIKE :q OR UPPER(description) LIKE :q)
-        ORDER BY part_no
-        LIMIT :lim OFFSET :off
-    """), {"q": q_clean, "lim": per_page, "off": offset, "store": active_store}).fetchall()
-    total = db.execute(text("""
-        SELECT COUNT(*) FROM order_items
-        WHERE store = :store AND (UPPER(part_no) LIKE :q OR UPPER(description) LIKE :q)
-    """), {"q": q_clean, "store": active_store}).scalar()
+    q_str = q.strip().upper()
+    default_brand = "Leypart" if active_store == "divya" else "Mahindra"
+    
+    if q_str:
+        q_clean = f"%{q_str}%"
+        rows = db.execute(text("""
+            SELECT id, part_no, description, hsn, mrp, brand
+            FROM order_items
+            WHERE store = :store AND (UPPER(part_no) LIKE :q OR UPPER(COALESCE(description, '')) LIKE :q)
+            ORDER BY part_no
+            LIMIT :lim OFFSET :off
+        """), {"q": q_clean, "lim": per_page, "off": offset, "store": active_store}).fetchall()
+        total = db.execute(text("""
+            SELECT COUNT(*) FROM order_items
+            WHERE store = :store AND (UPPER(part_no) LIKE :q OR UPPER(COALESCE(description, '')) LIKE :q)
+        """), {"q": q_clean, "store": active_store}).scalar() or 0
+    else:
+        rows = db.execute(text("""
+            SELECT id, part_no, description, hsn, mrp, brand
+            FROM order_items
+            WHERE store = :store
+            ORDER BY part_no
+            LIMIT :lim OFFSET :off
+        """), {"lim": per_page, "off": offset, "store": active_store}).fetchall()
+        total = db.execute(text("""
+            SELECT COUNT(*) FROM order_items
+            WHERE store = :store
+        """), {"store": active_store}).scalar() or 0
+
     db.close()
     return {"total": total, "page": page, "per_page": per_page,
             "items": [{"id": r.id, "part_no": r.part_no, "description": r.description,
-                       "hsn": r.hsn, "mrp": float(r.mrp or 0), "brand": getattr(r, "brand", "Mahindra") or "Mahindra"} for r in rows]}
+                       "hsn": r.hsn, "mrp": float(r.mrp or 0), "brand": getattr(r, "brand", default_brand) or default_brand} for r in rows]}
 
 @app.post("/price_master/add")
 async def price_master_add(request: Request):
