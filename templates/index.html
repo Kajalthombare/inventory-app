@@ -1086,15 +1086,19 @@
             }
 
             .table-wrap {
-                overflow-x: auto;
-                -webkit-overflow-scrolling: touch;
+                overflow-x: auto !important;
+                -webkit-overflow-scrolling: touch !important;
                 margin: 8px 0;
                 border: 1px solid var(--border);
                 border-radius: 8px;
+                width: 100% !important;
+                max-width: 100% !important;
+                display: block !important;
+                touch-action: pan-x pan-y;
             }
 
             .data-table {
-                min-width: 650px;
+                min-width: 850px !important;
             }
 
             .store-tabs {
@@ -2866,7 +2870,7 @@ async function loadQuotationList(){
     const res = await fetch('/quotations');
     const data = await res.json();
     if (!data.length){ document.getElementById('quotation-list').innerHTML='<div style="color:var(--text-muted);font-size:13px;">No proforma invoices yet</div>'; return; }
-    document.getElementById('quotation-list').innerHTML = `<table class="data-table" style="font-size:12px;">
+    document.getElementById('quotation-list').innerHTML = `<div class="table-wrap"><table class="data-table" style="font-size:12px; min-width:850px;">
         <thead><tr><th>Proforma Invoice No</th><th>Customer</th><th>Date</th><th>Grand Total (₹)</th><th style="width:320px;text-align:center;">Actions</th></tr></thead>
         <tbody>${data.map(q=>`<tr>
             <td style="font-weight:600;">${q.quotation_no}</td>
@@ -2882,7 +2886,7 @@ async function loadQuotationList(){
                 <button onclick="shareEmail('${q.customer_email||''}', '${q.quotation_no}', '${q.id}', '${q.grand_total}')" class="btn btn-ghost btn-sm" style="padding:2px 8px;font-size:11px;color:#0078D4;border:none;background:none;cursor:pointer;">✉️ Email</button>
             </td>
         </tr>`).join('')}</tbody>
-    </table>`;
+    </table></div>`;
 }
 
 function shareWhatsApp(mobile, quotationNo, id, grandTotal) {
@@ -3075,7 +3079,7 @@ async function loadInvoiceList(){
     const res = await fetch(`/invoices_list?q=${encodeURIComponent(q)}`);
     const data = await res.json();
     if (!data.length){ document.getElementById('invoice-list').innerHTML='<div style="color:var(--text-muted);font-size:13px;">No tax invoices found</div>'; return; }
-    document.getElementById('invoice-list').innerHTML = `<table class="data-table" style="font-size:12px;">
+    document.getElementById('invoice-list').innerHTML = `<div class="table-wrap"><table class="data-table" style="font-size:12px; min-width:850px;">
         <thead><tr><th>Invoice No</th><th>Customer</th><th>Date</th><th>Taxable (₹)</th><th>GST (₹)</th><th>Grand Total (₹)</th><th style="width:200px;text-align:center;">Actions</th></tr></thead>
         <tbody>${data.map(inv=>`<tr>
             <td style="font-weight:600;">${inv.invoice_no}</td>
@@ -3089,7 +3093,7 @@ async function loadInvoiceList(){
                 <button onclick="editInvoice(${inv.id})" class="btn btn-ghost btn-sm" style="padding:2px 8px;font-size:11px;color:#d97706;border:none;background:none;cursor:pointer;font-weight:600;">✏️ Edit & Correct</button>
             </td>
         </tr>`).join('')}</tbody>
-    </table>`;
+    </table></div>`;
 }
 
 async function editInvoice(inv_id){
@@ -3599,6 +3603,12 @@ function initTabs() {
 
         if (targetId === 'order-book-section') {
             initOrderBook();
+        }
+        if (targetId === 'quotation-section') {
+            loadQuotationList();
+        }
+        if (targetId === 'invoice-section') {
+            loadInvoiceList();
         }
 
         // Stats grid only visible on stock section
