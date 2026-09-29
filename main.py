@@ -113,6 +113,13 @@ def auto_import_inventory():
         except Exception:
             db.rollback()
 
+        # Add list_price to order_items
+        try:
+            db.execute(text("ALTER TABLE order_items ADD COLUMN list_price FLOAT DEFAULT 0.0"))
+            db.commit()
+        except Exception:
+            db.rollback()
+
         # Add vendor details, location, and store column to products table & others
         for tbl in ["products", "invoices", "quotations", "purchases", "order_items", "vendors"]:
             try:
@@ -294,13 +301,26 @@ def sync_order_csv_files(db, force=False):
                         row.get("HSN") or row.get("HSN Code") or row.get("HSN CODE") or row.get("hsn")
                     )
 
-                    raw_mrp = _clean(
-                        row.get("MRP") or row.get("mrp") or row.get("Rate") or row.get("RATE") or row.get("Price") or row.get("PRICE")
+                    raw_rate = _clean(
+                        row.get("Rate") or row.get("RATE") or row.get("List") or row.get("LIST") or row.get("List Price") or row.get("LIST PRICE")
                     )
+                    raw_mrp = _clean(
+                        row.get("MRP") or row.get("mrp") or row.get("Price") or row.get("PRICE")
+                    )
+                    try:
+                        list_price_val = float(str(raw_rate).replace(",", "").strip() or 0)
+                    except Exception:
+                        list_price_val = 0.0
+
                     try:
                         mrp_val = float(str(raw_mrp).replace(",", "").strip() or 0)
                     except Exception:
                         mrp_val = 0.0
+
+                    if list_price_val <= 0:
+                        list_price_val = mrp_val
+                    if mrp_val <= 0:
+                        mrp_val = list_price_val
 
                     store_val = _clean(row.get("store") or row.get("Store")) or default_store
                     brand = _clean(
@@ -311,6 +331,7 @@ def sync_order_csv_files(db, force=False):
                         "pn":   part_no,
                         "desc": desc,
                         "hsn":  hsn,
+                        "list_price": list_price_val,
                         "mrp":  mrp_val,
                         "store": store_val,
                         "brand": brand
@@ -321,14 +342,15 @@ def sync_order_csv_files(db, force=False):
                         params = {}
                         values_clauses = []
                         for i, item in enumerate(batch):
-                            values_clauses.append(f"(:pn_{i}, :desc_{i}, :hsn_{i}, :mrp_{i}, :store_{i}, :brand_{i})")
+                            values_clauses.append(f"(:pn_{i}, :desc_{i}, :hsn_{i}, :lp_{i}, :mrp_{i}, :store_{i}, :brand_{i})")
                             params[f"pn_{i}"] = item["pn"]
                             params[f"desc_{i}"] = item["desc"]
                             params[f"hsn_{i}"] = item["hsn"]
+                            params[f"lp_{i}"] = item["list_price"]
                             params[f"mrp_{i}"] = item["mrp"]
                             params[f"store_{i}"] = item["store"]
                             params[f"brand_{i}"] = item["brand"]
-                        sql = f"INSERT INTO order_items (part_no, description, hsn, mrp, store, brand) VALUES {', '.join(values_clauses)}"
+                        sql = f"INSERT INTO order_items (part_no, description, hsn, list_price, mrp, store, brand) VALUES {', '.join(values_clauses)}"
                         db.execute(text(sql), params)
                         db.commit()
                         batch = []
@@ -339,14 +361,15 @@ def sync_order_csv_files(db, force=False):
             params = {}
             values_clauses = []
             for i, item in enumerate(batch):
-                values_clauses.append(f"(:pn_{i}, :desc_{i}, :hsn_{i}, :mrp_{i}, :store_{i}, :brand_{i})")
+                values_clauses.append(f"(:pn_{i}, :desc_{i}, :hsn_{i}, :lp_{i}, :mrp_{i}, :store_{i}, :brand_{i})")
                 params[f"pn_{i}"] = item["pn"]
                 params[f"desc_{i}"] = item["desc"]
                 params[f"hsn_{i}"] = item["hsn"]
+                params[f"lp_{i}"] = item["list_price"]
                 params[f"mrp_{i}"] = item["mrp"]
                 params[f"store_{i}"] = item["store"]
                 params[f"brand_{i}"] = item["brand"]
-            sql = f"INSERT INTO order_items (part_no, description, hsn, mrp, store, brand) VALUES {', '.join(values_clauses)}"
+            sql = f"INSERT INTO order_items (part_no, description, hsn, list_price, mrp, store, brand) VALUES {', '.join(values_clauses)}"
             db.execute(text(sql), params)
             db.commit()
         msg = f"✅ Synced {total_imported} products from CSV files into order_items"
@@ -441,6 +464,7 @@ class OrderItems(Base):
     description = Column(String(255))
     hsn = Column(String(50))
     mrp = Column(Float)
+    list_price = Column(Float, default=0.0)
     store = Column(String(50), default="mahindra", index=True)
     brand = Column(String(100), default="Mahindra")
 
@@ -1474,7 +1498,8 @@ def get_price(request: Request, part_no: str):
         description = prod.description or (price.description if price else "")
         hsn = prod.hsn or (price.hsn if price else "")
     else:
-        rate = float(price.mrp) if (price and price.mrp) else (float(prod.rate) if (prod and prod.rate) else 0.0)
+        # Use List Price from price master (or MRP as fallback)
+        rate = float(price.list_price) if (price and price.list_price and float(price.list_price) > 0) else (float(price.mrp) if (price and price.mrp) else (float(prod.rate) if (prod and prod.rate) else 0.0))
         description = (prod.description if prod and prod.description else "") or (price.description if price else "")
         hsn = (prod.hsn if prod and prod.hsn else "") or (price.hsn if price else "")
 
@@ -1587,14 +1612,15 @@ def search_parts(request: Request, q: str = ""):
     q = q.strip().upper()
     default_brand = "Leypart" if active_store == "divya" else "Mahindra"
     results = db.execute(text("""
-        SELECT part_no, description, mrp, hsn, brand
+        SELECT part_no, description, list_price, mrp, hsn, brand
         FROM order_items
         WHERE store = :store AND (UPPER(part_no) LIKE :q OR UPPER(COALESCE(description, '')) LIKE :q)
         LIMIT 20
     """), {"q": f"%{q}%", "store": active_store}).fetchall()
     db.close()
     return [{"part_no": r.part_no, "description": r.description,
-             "rate": float(r.mrp or 0), "hsn": str(r.hsn or ""),
+             "rate": float(r.list_price if (r.list_price and float(r.list_price) > 0) else (r.mrp or 0)),
+             "hsn": str(r.hsn or ""),
              "brand": getattr(r, "brand", default_brand) or default_brand,
              "make": getattr(r, "brand", default_brand) or default_brand} for r in results]
 
@@ -1632,7 +1658,7 @@ def price_master_list(request: Request, page: int = 1, q: str = ""):
     if q_str:
         q_clean = f"%{q_str}%"
         rows = db.execute(text("""
-            SELECT id, part_no, description, hsn, mrp, brand
+            SELECT id, part_no, description, hsn, list_price, mrp, brand
             FROM order_items
             WHERE store = :store AND (UPPER(part_no) LIKE :q OR UPPER(COALESCE(description, '')) LIKE :q)
             ORDER BY part_no
@@ -1644,7 +1670,7 @@ def price_master_list(request: Request, page: int = 1, q: str = ""):
         """), {"q": q_clean, "store": active_store}).scalar() or 0
     else:
         rows = db.execute(text("""
-            SELECT id, part_no, description, hsn, mrp, brand
+            SELECT id, part_no, description, hsn, list_price, mrp, brand
             FROM order_items
             WHERE store = :store
             ORDER BY part_no
@@ -1658,7 +1684,52 @@ def price_master_list(request: Request, page: int = 1, q: str = ""):
     db.close()
     return {"total": total, "page": page, "per_page": per_page,
             "items": [{"id": r.id, "part_no": r.part_no, "description": r.description,
-                       "hsn": r.hsn, "mrp": float(r.mrp or 0), "brand": getattr(r, "brand", default_brand) or default_brand} for r in rows]}
+                       "hsn": r.hsn,
+                       "list_price": float(r.list_price if (r.list_price and float(r.list_price) > 0) else (r.mrp or 0)),
+                       "mrp": float(r.mrp if (r.mrp and float(r.mrp) > 0) else (r.list_price or 0)),
+                       "brand": getattr(r, "brand", default_brand) or default_brand} for r in rows]}
+
+@app.post("/price_master/add")
+async def price_master_add(request: Request):
+    active_store = get_active_store(request)
+    data = await request.json()
+    db = SessionLocal()
+    existing = db.query(OrderItems).filter(OrderItems.part_no == data["part_no"].strip(), OrderItems.store == active_store).first()
+    if existing:
+        db.close()
+        return {"error": "Part No already exists in this store"}
+    list_p = float(data.get("list_price", data.get("mrp", 0)))
+    mrp_p = float(data.get("mrp", list_p))
+    item = OrderItems(
+        part_no=data["part_no"].strip(),
+        description=data.get("description", "").strip(),
+        hsn=data.get("hsn", "").strip(),
+        brand=data.get("brand", "Mahindra").strip() or "Mahindra",
+        list_price=list_p,
+        mrp=mrp_p,
+        store=active_store
+    )
+    db.add(item)
+    db.commit()
+    db.close()
+    return {"ok": True}
+
+@app.post("/price_master/update/{item_id}")
+async def price_master_update(item_id: int, request: Request):
+    data = await request.json()
+    db = SessionLocal()
+    item = db.query(OrderItems).filter(OrderItems.id == item_id).first()
+    if item:
+        item.description = data.get("description", item.description)
+        item.hsn = data.get("hsn", item.hsn)
+        item.brand = data.get("brand", getattr(item, "brand", "Mahindra"))
+        if "list_price" in data:
+            item.list_price = float(data.get("list_price", item.list_price))
+        if "mrp" in data:
+            item.mrp = float(data.get("mrp", item.mrp))
+        db.commit()
+    db.close()
+    return {"ok": True}
 
 @app.post("/price_master/add")
 async def price_master_add(request: Request):
