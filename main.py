@@ -262,75 +262,95 @@ def sync_order_csv_files(db, force=False):
 
     nan_count = db.execute(text("SELECT COUNT(*) FROM order_items WHERE part_no = 'nan' OR description = 'nan' OR part_no IS NULL OR part_no = ''")).scalar() or 0
 
-    if force or oi_count < csv_count * 0.95 or oi_count != csv_count or nan_count > 0:
-        print(f"⏳ Syncing {len(csv_files)} CSV file(s) ({csv_count} total rows) into order_items ({oi_count} in DB, {nan_count} invalid)...")
+    if force or oi_count < 1000 or nan_count > 0:
+        print(f"⏳ Syncing {len(csv_files)} CSV file(s) into order_items ({oi_count} in DB)...")
         db.execute(text("DELETE FROM order_items"))
         db.commit()
         batch = []
-        for _, row in df_csv.iterrows():
-            part_no = _clean(
-                row.get("Part No") or row.get("Part number") or row.get("Part Number") or row.get("PART NO") or row.get("PART NUMBER") or row.get("part_no")
-            )
-            if not part_no:
-                continue
-
-            desc = _clean(
-                row.get("Part Desc") or row.get("Part Description") or row.get("PART DESC") or row.get("PART DESCRIPTION") or row.get("Description") or row.get("description")
-            )
-
-            hsn = _clean(
-                row.get("HSN") or row.get("HSN Code") or row.get("HSN CODE") or row.get("hsn")
-            )
-
-            raw_mrp = _clean(
-                row.get("MRP") or row.get("mrp") or row.get("Rate") or row.get("RATE") or row.get("Price") or row.get("PRICE")
-            )
+        total_imported = 0
+        for cfile in csv_files:
             try:
-                mrp_val = float(str(raw_mrp).replace(",", "").strip() or 0)
-            except Exception:
-                mrp_val = 0.0
+                import pandas as pd
+                tdf = pd.read_csv(cfile, dtype=str, on_bad_lines="skip")
+                if len(tdf.columns) <= 1:
+                    tdf = pd.read_csv(cfile, dtype=str, sep="\t", on_bad_lines="skip")
+                tdf.columns = [col.strip() for col in tdf.columns]
+                
+                default_store = "divya" if "divya" in os.path.basename(cfile).lower() else "mahindra"
+                
+                for _, row in tdf.iterrows():
+                    part_no = _clean(
+                        row.get("Part No") or row.get("Part number") or row.get("Part Number") or row.get("PART NO") or row.get("PART NUMBER") or row.get("part_no")
+                    )
+                    if not part_no:
+                        continue
 
-            brand = _clean(
-                row.get("Brand") or row.get("BRAND") or row.get("brand") or row.get("Brand Name")
-            ) or "Mahindra"
+                    desc = _clean(
+                        row.get("Part Desc") or row.get("Part Description") or row.get("PART DESC") or row.get("PART DESCRIPTION") or row.get("Description") or row.get("description")
+                    )
 
-            batch.append({
-                "pn":   part_no,
-                "desc": desc,
-                "hsn":  hsn,
-                "mrp":  mrp_val,
-                "brand": brand
-            })
-            if len(batch) >= 500:
-                params = {}
-                values_clauses = []
-                for i, item in enumerate(batch):
-                    values_clauses.append(f"(:pn_{i}, :desc_{i}, :hsn_{i}, :mrp_{i}, 'mahindra', :brand_{i})")
-                    params[f"pn_{i}"] = item["pn"]
-                    params[f"desc_{i}"] = item["desc"]
-                    params[f"hsn_{i}"] = item["hsn"]
-                    params[f"mrp_{i}"] = item["mrp"]
-                    params[f"brand_{i}"] = item["brand"]
-                sql = f"INSERT INTO order_items (part_no, description, hsn, mrp, store, brand) VALUES {', '.join(values_clauses)}"
-                db.execute(text(sql), params)
-                db.commit()
-                batch = []
+                    hsn = _clean(
+                        row.get("HSN") or row.get("HSN Code") or row.get("HSN CODE") or row.get("hsn")
+                    )
+
+                    raw_mrp = _clean(
+                        row.get("MRP") or row.get("mrp") or row.get("Rate") or row.get("RATE") or row.get("Price") or row.get("PRICE")
+                    )
+                    try:
+                        mrp_val = float(str(raw_mrp).replace(",", "").strip() or 0)
+                    except Exception:
+                        mrp_val = 0.0
+
+                    store_val = _clean(row.get("store") or row.get("Store")) or default_store
+                    brand = _clean(
+                        row.get("Brand") or row.get("BRAND") or row.get("brand") or row.get("Brand Name")
+                    ) or ("Leypart" if store_val == "divya" else "Mahindra")
+
+                    batch.append({
+                        "pn":   part_no,
+                        "desc": desc,
+                        "hsn":  hsn,
+                        "mrp":  mrp_val,
+                        "store": store_val,
+                        "brand": brand
+                    })
+                    total_imported += 1
+
+                    if len(batch) >= 500:
+                        params = {}
+                        values_clauses = []
+                        for i, item in enumerate(batch):
+                            values_clauses.append(f"(:pn_{i}, :desc_{i}, :hsn_{i}, :mrp_{i}, :store_{i}, :brand_{i})")
+                            params[f"pn_{i}"] = item["pn"]
+                            params[f"desc_{i}"] = item["desc"]
+                            params[f"hsn_{i}"] = item["hsn"]
+                            params[f"mrp_{i}"] = item["mrp"]
+                            params[f"store_{i}"] = item["store"]
+                            params[f"brand_{i}"] = item["brand"]
+                        sql = f"INSERT INTO order_items (part_no, description, hsn, mrp, store, brand) VALUES {', '.join(values_clauses)}"
+                        db.execute(text(sql), params)
+                        db.commit()
+                        batch = []
+            except Exception as ex:
+                print(f"⚠ Could not read {cfile}: {ex}")
+
         if batch:
             params = {}
             values_clauses = []
             for i, item in enumerate(batch):
-                values_clauses.append(f"(:pn_{i}, :desc_{i}, :hsn_{i}, :mrp_{i}, 'mahindra', :brand_{i})")
+                values_clauses.append(f"(:pn_{i}, :desc_{i}, :hsn_{i}, :mrp_{i}, :store_{i}, :brand_{i})")
                 params[f"pn_{i}"] = item["pn"]
                 params[f"desc_{i}"] = item["desc"]
                 params[f"hsn_{i}"] = item["hsn"]
                 params[f"mrp_{i}"] = item["mrp"]
+                params[f"store_{i}"] = item["store"]
                 params[f"brand_{i}"] = item["brand"]
             sql = f"INSERT INTO order_items (part_no, description, hsn, mrp, store, brand) VALUES {', '.join(values_clauses)}"
             db.execute(text(sql), params)
             db.commit()
-        msg = f"✅ Synced {csv_count} products from {len(csv_files)} CSV files into order_items"
+        msg = f"✅ Synced {total_imported} products from CSV files into order_items"
         print(msg)
-        return {"status": "success", "message": msg, "count": csv_count}
+        return {"status": "success", "message": msg, "count": total_imported}
     else:
         msg = f"✅ order_items up to date ({oi_count} rows)"
         print(msg)
