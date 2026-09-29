@@ -269,8 +269,9 @@ def sync_order_csv_files(db, force=False):
 
     nan_count = db.execute(text("SELECT COUNT(*) FROM order_items WHERE part_no = 'nan' OR description = 'nan' OR part_no IS NULL OR part_no = ''")).scalar() or 0
     divya_count = db.execute(text("SELECT COUNT(*) FROM order_items WHERE store = 'divya'")).scalar() or 0
+    divya_same_price_count = db.execute(text("SELECT COUNT(*) FROM order_items WHERE store = 'divya' AND list_price = mrp AND mrp > 0")).scalar() or 0
 
-    if force or oi_count < 1000 or nan_count > 0 or divya_count == 0:
+    if force or oi_count < 1000 or nan_count > 0 or divya_count == 0 or divya_same_price_count > 100:
         print(f"⏳ Syncing {len(csv_files)} CSV file(s) into order_items ({oi_count} total in DB, {divya_count} for divya)...")
         db.execute(text("DELETE FROM order_items"))
         db.commit()
