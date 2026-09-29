@@ -2389,7 +2389,7 @@ async function acSearch(inputEl, listEl, onSelect) {
         const data = await res.json();
         
         let html = data.map(d =>
-            `<div class="ac-item" onclick="acPick(this)" data-pno="${d.part_no}" data-desc="${d.description}" data-rate="${d.rate}" data-hsn="${d.hsn}" data-brand="${d.brand||d.make||'Mahindra'}" data-make="${d.make||d.brand||'Mahindra'}" data-stock="">
+            `<div class="ac-item" onclick="acPick(this)" data-pno="${d.part_no}" data-desc="${d.description}" data-rate="${d.rate}" data-hsn="${d.hsn}" data-brand="${d.brand||d.make||''}" data-make="${d.make||d.brand||''}" data-stock="">
                 <strong>${d.part_no}</strong> — ${d.description} &nbsp;<span style="color:#2563eb;">₹${d.rate.toFixed(2)}</span>
             </div>`
         ).join('');
@@ -2415,7 +2415,7 @@ async function acSearch(inputEl, listEl, onSelect) {
 }
 function acPick(el) {
     const list = el.parentElement;
-    list._onSelect({ part_no: el.dataset.pno, description: el.dataset.desc, rate: parseFloat(el.dataset.rate), hsn: el.dataset.hsn, brand: el.dataset.brand || 'Mahindra', make: el.dataset.make || 'Mahindra' });
+    list._onSelect({ part_no: el.dataset.pno, description: el.dataset.desc, rate: parseFloat(el.dataset.rate), hsn: el.dataset.hsn, brand: el.dataset.brand || '', make: el.dataset.make || '' });
     list.style.display = 'none';
 }
 
@@ -2656,7 +2656,7 @@ function renderQRows(focusId){
         html += `<tr id="q-row-${i}">
             <td style="position:relative;">
                 <input id="q-pno-${i}" value="${r.part_no || ''}" 
-                    oninput="acSearch(this,document.getElementById('q-ac-${i}'),d=>{qRows[${i}].part_no=d.part_no;qRows[${i}].description=d.description;qRows[${i}].rate=d.rate;qRows[${i}].hsn=d.hsn;fetchQStock(${i});renderQRows('q-qty-${i}');})"
+                    oninput="acSearch(this,document.getElementById('q-ac-${i}'),d=>{qRows[${i}].part_no=d.part_no;qRows[${i}].description=d.description;qRows[${i}].rate=d.rate;qRows[${i}].hsn=d.hsn;qRows[${i}].brand=d.brand||d.make;qRows[${i}].make=d.make||d.brand;fetchQStock(${i});renderQRows('q-qty-${i}');})"
                     onblur="qRows[${i}].part_no=this.value.trim().toUpperCase();this.value=qRows[${i}].part_no;if(qRows[${i}].part_no)fetchQStock(${i});"
                     onkeydown="handleRowKey(event, 'q', ${i}, 'pno')"
                     class="q-table-input" placeholder="Part No or search…">
@@ -2741,6 +2741,10 @@ async function fetchQStock(i){
         if (d.description) qRows[i].description = d.description;
         if (d.rate && d.rate > 0) qRows[i].rate = d.rate;
         if (d.hsn) qRows[i].hsn = d.hsn;
+        if (d.brand || d.make) {
+            qRows[i].brand = d.brand || d.make;
+            qRows[i].make = qRows[i].brand;
+        }
 
         const descEl = document.getElementById(`q-desc-${i}`);
         if (descEl && d.description) descEl.value = d.description;
@@ -2968,7 +2972,7 @@ function renderInvRows(focusId){
         html += `<tr id="inv-row-${i}">
             <td style="position:relative;">
                 <input id="inv-pno-${i}" value="${r.part_no || ''}"
-                    oninput="acSearch(this,document.getElementById('inv-ac-${i}'),d=>{invRows[${i}].part_no=d.part_no;invRows[${i}].description=d.description;invRows[${i}].rate=d.rate;invRows[${i}].hsn=d.hsn;fetchInvStock(${i});renderInvRows('inv-qty-${i}');})"
+                    oninput="acSearch(this,document.getElementById('inv-ac-${i}'),d=>{invRows[${i}].part_no=d.part_no;invRows[${i}].description=d.description;invRows[${i}].rate=d.rate;invRows[${i}].hsn=d.hsn;invRows[${i}].brand=d.brand||d.make;invRows[${i}].make=d.make||d.brand;fetchInvStock(${i});renderInvRows('inv-qty-${i}');})"
                     onblur="invRows[${i}].part_no=this.value.trim().toUpperCase();this.value=invRows[${i}].part_no;if(invRows[${i}].part_no)fetchInvStock(${i});"
                     onkeydown="handleRowKey(event, 'inv', ${i}, 'pno')"
                     class="q-table-input" placeholder="Part No or search…">
@@ -3035,6 +3039,10 @@ async function fetchInvStock(i){
         if (d.description) invRows[i].description = d.description;
         if (d.rate && d.rate > 0) invRows[i].rate = d.rate;
         if (d.hsn) invRows[i].hsn = d.hsn;
+        if (d.brand || d.make) {
+            invRows[i].brand = d.brand || d.make;
+            invRows[i].make = invRows[i].brand;
+        }
         if (invRows[i].qty > invRows[i].stock && invRows[i].stock > 0) invRows[i].qty = invRows[i].stock;
 
         const descEl = document.getElementById(`inv-desc-${i}`);
