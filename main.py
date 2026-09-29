@@ -1573,7 +1573,7 @@ def get_rate(request: Request, part_no: str):
 
     # Step 2: Check order_items (price master) as fallback
     item = db.execute(
-        text("SELECT mrp, description, hsn, brand FROM order_items WHERE part_no = :p AND store = :store"),
+        text("SELECT list_price, mrp, description, hsn, brand FROM order_items WHERE part_no = :p AND store = :store"),
         {"p": part_no, "store": active_store}
     ).fetchone()
 
@@ -1582,7 +1582,7 @@ def get_rate(request: Request, part_no: str):
         description = product.description or (item.description if item else "")
         hsn = product.hsn or (str(item.hsn) if item else "")
     else:
-        rate = float(item.mrp) if (item and item.mrp) else (float(product.rate) if (product and product.rate) else 0.0)
+        rate = float(item.list_price) if (item and item.list_price and float(item.list_price) > 0) else (float(item.mrp) if (item and item.mrp) else (float(product.rate) if (product and product.rate) else 0.0))
         description = item.description if item else (product.description if product else "")
         hsn = str(item.hsn) if item else (product.hsn if product else "")
 
@@ -1731,41 +1731,7 @@ async def price_master_update(item_id: int, request: Request):
     db.close()
     return {"ok": True}
 
-@app.post("/price_master/add")
-async def price_master_add(request: Request):
-    active_store = get_active_store(request)
-    data = await request.json()
-    db = SessionLocal()
-    existing = db.query(OrderItems).filter(OrderItems.part_no == data["part_no"].strip(), OrderItems.store == active_store).first()
-    if existing:
-        db.close()
-        return {"error": "Part No already exists in this store"}
-    item = OrderItems(
-        part_no=data["part_no"].strip(),
-        description=data.get("description", "").strip(),
-        hsn=data.get("hsn", "").strip(),
-        brand=data.get("brand", "Mahindra").strip() or "Mahindra",
-        mrp=float(data.get("mrp", 0)),
-        store=active_store
-    )
-    db.add(item)
-    db.commit()
-    db.close()
-    return {"ok": True}
 
-@app.post("/price_master/update/{item_id}")
-async def price_master_update(item_id: int, request: Request):
-    data = await request.json()
-    db = SessionLocal()
-    item = db.query(OrderItems).filter(OrderItems.id == item_id).first()
-    if item:
-        item.description = data.get("description", item.description)
-        item.hsn = data.get("hsn", item.hsn)
-        item.brand = data.get("brand", getattr(item, "brand", "Mahindra"))
-        item.mrp = float(data.get("mrp", item.mrp))
-        db.commit()
-    db.close()
-    return {"ok": True}
 
 @app.post("/price_master/delete/{item_id}")
 def price_master_delete(item_id: int):
@@ -2083,7 +2049,7 @@ async def update_invoice(inv_id: int, request: Request):
         for row in rows:
             product = db.query(Product).filter(Product.part_no == row["part_no"], Product.store == active_store).first()
             db_item = db.execute(
-                text("SELECT description, mrp, hsn FROM order_items WHERE part_no=:p AND store=:store"),
+                text("SELECT description, list_price, mrp, hsn FROM order_items WHERE part_no=:p AND store=:store"),
                 {"p": row["part_no"], "store": active_store}
             ).fetchone()
 
@@ -2093,7 +2059,9 @@ async def update_invoice(inv_id: int, request: Request):
             rate = float(row.get("rate", 0))
             if rate == 0 and product and product.rate and float(product.rate) > 0:
                 rate = float(product.rate)
-            if rate == 0 and db_item and db_item.mrp and float(db_item.mrp) > 0:
+            if rate == 0 and db_item and getattr(db_item, 'list_price', None) and float(db_item.list_price) > 0:
+                rate = float(db_item.list_price)
+            elif rate == 0 and db_item and db_item.mrp and float(db_item.mrp) > 0:
                 rate = float(db_item.mrp)
 
             qty = float(row.get("qty", 1))
@@ -3247,18 +3215,20 @@ async def download_pdf(request: Request):
         for row in data:
             product = db.query(Product).filter(Product.part_no == row["part_no"], Product.store == active_store).first()
             db_item = db.execute(
-                text("SELECT description, mrp, hsn FROM order_items WHERE part_no=:p AND store=:store"),
+                text("SELECT description, list_price, mrp, hsn FROM order_items WHERE part_no=:p AND store=:store"),
                 {"p": row["part_no"], "store": active_store}
             ).fetchone()
 
             desc = row.get("description", "") or (product.description if product else "") or (db_item.description if db_item else "")
             hsn = row.get("hsn", "") or (product.hsn if product else "") or (str(db_item.hsn) if db_item else "")
 
-            # Rate Priority: 1. UI entered rate, 2. Stock Data rate, 3. Price Master MRP
+            # Rate Priority: 1. UI entered rate, 2. Stock Data rate, 3. Price Master List Price / MRP
             rate = float(row.get("rate", 0))
             if rate == 0 and product and product.rate and float(product.rate) > 0:
                 rate = float(product.rate)
-            if rate == 0 and db_item and db_item.mrp and float(db_item.mrp) > 0:
+            if rate == 0 and db_item and getattr(db_item, 'list_price', None) and float(db_item.list_price) > 0:
+                rate = float(db_item.list_price)
+            elif rate == 0 and db_item and db_item.mrp and float(db_item.mrp) > 0:
                 rate = float(db_item.mrp)
 
             qty  = float(row.get("qty", 1))
