@@ -1395,6 +1395,7 @@
                             <tr>
                                 <th>Date</th>
                                 <th>Vendor Name</th>
+                                <th>Vendor Inv No</th>
                                 <th>Part No</th>
                                 <th>Description</th>
                                 <th>HSN</th>
@@ -1406,7 +1407,7 @@
                         </thead>
                         <tbody id="p_items_body">
                             <tr>
-                                <td colspan="9" style="text-align:center;color:var(--text-muted);">No data loaded. Select filters and click Check Purchases.</td>
+                                <td colspan="10" style="text-align:center;color:var(--text-muted);">No data loaded. Select filters and click Check Purchases.</td>
                             </tr>
                         </tbody>
                     </table>
@@ -1726,24 +1727,28 @@
                 </div>
                 <div class="section-body">
                     <div class="form-row" style="margin-bottom:16px; gap:12px;">
-                        <div class="form-field" style="position:relative; flex:2; min-width:200px;">
+                        <div class="form-field" style="position:relative; flex:2; min-width:180px;">
                             <label>Vendor Name</label>
                             <input type="text" id="purchase-vendor-name" class="form-input" placeholder="Enter or select vendor" autocomplete="off" required>
                             <div id="purchase-vendor-ac" class="ac-list"></div>
                         </div>
-                        <div class="form-field" style="flex:2; min-width:200px;">
+                        <div class="form-field" style="flex:1.5; min-width:140px;">
+                            <label>Vendor Invoice No</label>
+                            <input type="text" id="purchase-vendor-invno" class="form-input" placeholder="Invoice No">
+                        </div>
+                        <div class="form-field" style="flex:2; min-width:180px;">
                             <label>Address</label>
                             <input type="text" id="purchase-vendor-address" class="form-input" placeholder="Vendor Address">
                         </div>
-                        <div class="form-field" style="flex:1; min-width:130px;">
+                        <div class="form-field" style="flex:1; min-width:120px;">
                             <label>Mobile Num</label>
                             <input type="text" id="purchase-vendor-mobile" class="form-input" placeholder="Mobile">
                         </div>
-                        <div class="form-field" style="flex:1; min-width:130px;">
+                        <div class="form-field" style="flex:1; min-width:120px;">
                             <label>GSTIN</label>
                             <input type="text" id="purchase-vendor-gstin" class="form-input" placeholder="GSTIN">
                         </div>
-                        <div class="form-field" style="flex:1.5; min-width:180px;">
+                        <div class="form-field" style="flex:1.5; min-width:160px;">
                             <label>Email ID</label>
                             <input type="email" id="purchase-vendor-email" class="form-input" placeholder="Email">
                         </div>
@@ -2094,6 +2099,7 @@ async function saveStockPurchase() {
 
     const payload = {
         vendor_name: vendor_name,
+        vendor_invoice_no: (document.getElementById('purchase-vendor-invno')?.value || '').trim(),
         vendor_address: document.getElementById('purchase-vendor-address').value.trim(),
         vendor_mobile: document.getElementById('purchase-vendor-mobile').value.trim(),
         vendor_gstin: document.getElementById('purchase-vendor-gstin').value.trim(),
@@ -2331,7 +2337,7 @@ async function getPurchases(){
     if (data.items.length === 0) {
         document.getElementById('p_items_body').innerHTML = `
             <tr>
-                <td colspan="9" style="text-align:center;color:var(--text-muted);">No purchases found for selected filters.</td>
+                <td colspan="10" style="text-align:center;color:var(--text-muted);">No purchases found for selected filters.</td>
             </tr>
         `;
         return;
@@ -2341,6 +2347,7 @@ async function getPurchases(){
         <tr>
             <td style="color:var(--text-muted);font-size:12px;">${it.date.split(' ')[0]}</td>
             <td style="font-weight:600;">${it.vendor_name}</td>
+            <td style="color:var(--text-muted);font-size:12px;">${it.vendor_invoice_no || '—'}</td>
             <td style="font-weight:600;color:var(--primary);">${it.part_no}</td>
             <td style="color:var(--text-muted);">${it.description}</td>
             <td>${it.hsn || '—'}</td>

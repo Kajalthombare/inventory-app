@@ -165,6 +165,7 @@ def auto_import_inventory():
             ("vendor_mobile", "VARCHAR(50)"),
             ("vendor_gstin", "VARCHAR(50)"),
             ("vendor_email", "VARCHAR(255)"),
+            ("vendor_invoice_no", "VARCHAR(100)"),
             ("location", "VARCHAR(100)"),
             ("store_location", "VARCHAR(100) DEFAULT 'Jasai'")
         ]:
@@ -173,6 +174,12 @@ def auto_import_inventory():
                 db.commit()
             except Exception:
                 db.rollback()
+
+        try:
+            db.execute(text("ALTER TABLE purchases ADD COLUMN vendor_invoice_no VARCHAR(100)"))
+            db.commit()
+        except Exception:
+            db.rollback()
 
         try:
             db.execute(text("UPDATE products SET store_location = 'Jasai' WHERE store_location IS NULL OR store_location = ''"))
@@ -419,6 +426,7 @@ class Product(Base):
     vendor_mobile = Column(String(50), nullable=True)
     vendor_gstin = Column(String(50), nullable=True)
     vendor_email = Column(String(255), nullable=True)
+    vendor_invoice_no = Column(String(100), nullable=True)
     brand = Column(String(100), default="Mahindra")
     out_of_stock_date = Column(DateTime, nullable=True)
 
@@ -510,6 +518,7 @@ class Purchase(Base):
     __tablename__ = "purchases"
     id = Column(Integer, primary_key=True)
     vendor_name = Column(String(255))
+    vendor_invoice_no = Column(String(100), nullable=True)
     part_no = Column(String(100))
     description = Column(String(255))
     hsn = Column(String(50))
@@ -866,6 +875,7 @@ def upload_stock(request: Request, file: UploadFile = File(...), mode: str = For
             vendor_mobile = str(row.get("VENDOR MOBILE", row.get("MOBILE", ""))).strip()
             vendor_gstin = str(row.get("VENDOR GSTIN", row.get("GSTIN", ""))).strip()
             vendor_email = str(row.get("VENDOR EMAIL", row.get("EMAIL", ""))).strip()
+            vendor_invoice_no = str(row.get("VENDOR INVOICE NO", row.get("VENDOR INVOICE", row.get("INVOICE NO", row.get("BILL NO", ""))))).strip()
             location = str(row.get("LOCATION", row.get("STORE LOCATION", row.get("RACK", row.get("SHELF", row.get("BIN", row.get("PLACE", ""))))))).strip()
 
             amount = (qty * rate) - ((qty * rate) * (discount / 100)) if qty > 0 else 0.0
@@ -1340,6 +1350,7 @@ async def add_purchase_bill(request: Request):
     db = SessionLocal()
     
     vendor_name = data.get("vendor_name", "").strip()
+    vendor_invoice_no = data.get("vendor_invoice_no", "").strip()
     vendor_address = data.get("vendor_address", "").strip()
     vendor_mobile = data.get("vendor_mobile", "").strip()
     vendor_gstin = data.get("vendor_gstin", "").strip()
@@ -1395,6 +1406,7 @@ async def add_purchase_bill(request: Request):
             purchase_amt = (qty * rate) - ((qty * rate) * (discount / 100))
             new_purchase = Purchase(
                 vendor_name=vendor_name if vendor_name else "Local Vendor",
+                vendor_invoice_no=vendor_invoice_no,
                 part_no=part_no,
                 description=description,
                 hsn=hsn,
@@ -1414,6 +1426,8 @@ async def add_purchase_bill(request: Request):
         if existing:
             existing.quantity += qty
             existing.brand = item_brand
+            if vendor_invoice_no:
+                existing.vendor_invoice_no = vendor_invoice_no
             if rate > 0:
                 existing.rate = rate
             if description:
@@ -1465,6 +1479,7 @@ async def add_purchase_bill(request: Request):
                 location=item_loc,
                 store=active_store,
                 vendor_name=vendor_name,
+                vendor_invoice_no=vendor_invoice_no,
                 vendor_address=vendor_address,
                 vendor_mobile=vendor_mobile,
                 vendor_gstin=vendor_gstin,
@@ -3619,7 +3634,7 @@ def purchase_summary(
     
     items_query = """
         SELECT 
-            id, vendor_name, part_no, description, hsn, quantity, rate, discount, amount, date
+            id, vendor_name, vendor_invoice_no, part_no, description, hsn, quantity, rate, discount, amount, date
         FROM purchases
         WHERE store = :store AND CAST(date AS DATE) BETWEEN :start AND :end
     """
@@ -3647,6 +3662,7 @@ def purchase_summary(
         "items": [{
             "id": r.id,
             "vendor_name": r.vendor_name,
+            "vendor_invoice_no": r.vendor_invoice_no or "",
             "part_no": r.part_no,
             "description": r.description,
             "hsn": r.hsn,
@@ -3671,7 +3687,7 @@ def export_purchase_excel(
     
     items_query = """
         SELECT 
-            date, vendor_name, part_no, description, hsn, quantity, rate, discount, amount
+            date, vendor_name, vendor_invoice_no, part_no, description, hsn, quantity, rate, discount, amount
         FROM purchases
         WHERE store = :store AND CAST(date AS DATE) BETWEEN :start AND :end
     """
@@ -3692,7 +3708,7 @@ def export_purchase_excel(
     db.close()
     
     df = pd.DataFrame(items_result, columns=[
-        "Date", "Vendor Name", "Part No", "Description", "HSN", "Quantity", "Rate", "Discount %", "Total Amount"
+        "Date", "Vendor Name", "Vendor Invoice No", "Part No", "Description", "HSN", "Quantity", "Rate", "Discount %", "Total Amount"
     ])
     
     if not df.empty and "Date" in df.columns:
