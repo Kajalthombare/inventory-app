@@ -2025,6 +2025,19 @@ async def save_quotation(request: Request):
     for r in rows:
         sub = r["rate"] * r["qty"] * (1 - r.get("discount", 0)/100)
         make_val = r.get("make") or r.get("brand") or default_make
+        hsn_code = str(r.get("hsn", "") or "").strip()
+        if not hsn_code and r.get("part_no"):
+            part = str(r.get("part_no")).strip()
+            p_row = db.execute(text("SELECT hsn FROM products WHERE part_no = :p LIMIT 1"), {"p": part}).fetchone()
+            if p_row and p_row.hsn:
+                hsn_code = str(p_row.hsn).strip()
+            else:
+                o_row = db.execute(text("SELECT hsn FROM order_items WHERE part_no = :p LIMIT 1"), {"p": part}).fetchone()
+                if o_row and o_row.hsn:
+                    hsn_code = str(o_row.hsn).strip()
+        if not hsn_code:
+            hsn_code = "87089900"
+
         db.add(QuotationItem(
             quotation_id=quot.id,
             part_no=r.get("part_no", ""),
@@ -2034,7 +2047,7 @@ async def save_quotation(request: Request):
             qty=r["qty"],
             discount=r.get("discount", 0),
             amount=round(sub, 2),
-            hsn=r.get("hsn", "")
+            hsn=hsn_code
         ))
     db.commit()
     q_id = quot.id
@@ -2373,8 +2386,8 @@ async def download_quotation_pdf(request: Request):
     total = round(subtotal + cgst + sgst, 2)
     date_str = datetime.now().strftime("%d-%b-%Y")
 
-    hsn_summary, _, _, _, _ = build_hsn_summary(items)
-    tax_words = number_to_words_inr(cgst + sgst)
+    hsn_summary, hsn_tot_taxable, hsn_tot_cgst, hsn_tot_sgst, hsn_tot_tax = build_hsn_summary(items)
+    tax_words = number_to_words_inr(hsn_tot_tax)
     grand_words = number_to_words_inr(total)
 
     env = Environment(loader=FileSystemLoader("templates"))
@@ -2391,6 +2404,10 @@ async def download_quotation_pdf(request: Request):
         sgst=sgst,
         total=total,
         hsn_summary=hsn_summary,
+        hsn_tot_taxable=hsn_tot_taxable,
+        hsn_tot_cgst=hsn_tot_cgst,
+        hsn_tot_sgst=hsn_tot_sgst,
+        hsn_tot_tax=hsn_tot_tax,
         tax_words=tax_words,
         grand_words=grand_words,
         savings=round(savings, 2),
@@ -2633,11 +2650,11 @@ def view_quotation_saved(q_id: int, request: Request):
         db.close()
         return HTMLResponse("<h1>Proforma Invoice not found</h1>", status_code=404)
         
+    db = SessionLocal()
     items_rows = db.execute(text("""
         SELECT part_no, description, rate, qty, discount, amount, hsn, brand
         FROM quotation_items WHERE quotation_id = :qid
     """), {"qid": q_id}).fetchall()
-    db.close()
 
     active_store = getattr(quotation, 'store', get_active_store(request))
     default_make = "Multi" if active_store in ["divya", "leypart"] else "Mahindra"
@@ -2649,12 +2666,25 @@ def view_quotation_saved(q_id: int, request: Request):
         disc = sub * ((r.discount or 0) / 100)
         taxable = sub - disc
         make_val = getattr(r, 'brand', None) or default_make
+
+        hsn_code = (r.hsn or "").strip()
+        if not hsn_code and r.part_no:
+            p_row = db.execute(text("SELECT hsn FROM products WHERE part_no = :p LIMIT 1"), {"p": r.part_no}).fetchone()
+            if p_row and p_row.hsn:
+                hsn_code = str(p_row.hsn).strip()
+            else:
+                o_row = db.execute(text("SELECT hsn FROM order_items WHERE part_no = :p LIMIT 1"), {"p": r.part_no}).fetchone()
+                if o_row and o_row.hsn:
+                    hsn_code = str(o_row.hsn).strip()
+        if not hsn_code:
+            hsn_code = "87089900"
+
         items.append({
             "part_no": r.part_no,
             "description": r.description,
             "make": make_val,
             "brand": make_val,
-            "hsn": r.hsn,
+            "hsn": hsn_code,
             "rate": r.rate,
             "qty": r.qty,
             "discount": r.discount or 0,
@@ -2663,10 +2693,16 @@ def view_quotation_saved(q_id: int, request: Request):
         subtotal += taxable
         savings += disc
 
+    db.close()
+
     cgst = round(subtotal * 0.09, 2)
     sgst = round(subtotal * 0.09, 2)
     total = round(subtotal + cgst + sgst, 2)
     
+    hsn_summary, hsn_tot_taxable, hsn_tot_cgst, hsn_tot_sgst, hsn_tot_tax = build_hsn_summary(items)
+    tax_words = number_to_words_inr(hsn_tot_tax)
+    grand_words = number_to_words_inr(total)
+
     env = Environment(loader=FileSystemLoader("templates"))
     template = env.get_template("quotation_pdf.html")
 
@@ -2680,6 +2716,13 @@ def view_quotation_saved(q_id: int, request: Request):
         cgst=cgst,
         sgst=sgst,
         total=total,
+        hsn_summary=hsn_summary,
+        hsn_tot_taxable=hsn_tot_taxable,
+        hsn_tot_cgst=hsn_tot_cgst,
+        hsn_tot_sgst=hsn_tot_sgst,
+        hsn_tot_tax=hsn_tot_tax,
+        tax_words=tax_words,
+        grand_words=grand_words,
         savings=round(savings, 2),
         date=safe_format_date(quotation.date),
         buyer_name=quotation.customer_name,
@@ -2738,8 +2781,8 @@ def download_quotation_pdf_file(q_id: int, request: Request):
     sgst = round(subtotal * 0.09, 2)
     total = round(subtotal + cgst + sgst, 2)
     
-    hsn_summary, _, _, _, _ = build_hsn_summary(items)
-    tax_words = number_to_words_inr(cgst + sgst)
+    hsn_summary, hsn_tot_taxable, hsn_tot_cgst, hsn_tot_sgst, hsn_tot_tax = build_hsn_summary(items)
+    tax_words = number_to_words_inr(hsn_tot_tax)
     grand_words = number_to_words_inr(total)
 
     env = Environment(loader=FileSystemLoader("templates"))
@@ -2756,6 +2799,10 @@ def download_quotation_pdf_file(q_id: int, request: Request):
         sgst=sgst,
         total=total,
         hsn_summary=hsn_summary,
+        hsn_tot_taxable=hsn_tot_taxable,
+        hsn_tot_cgst=hsn_tot_cgst,
+        hsn_tot_sgst=hsn_tot_sgst,
+        hsn_tot_tax=hsn_tot_tax,
         tax_words=tax_words,
         grand_words=grand_words,
         savings=round(savings, 2),
@@ -2862,8 +2909,8 @@ async def send_email_quotation(q_id: int, request: Request, email: str = Query(N
     sgst = round(subtotal * 0.09, 2)
     total = round(subtotal + cgst + sgst, 2)
     
-    hsn_summary, _, _, _, _ = build_hsn_summary(items)
-    tax_words = number_to_words_inr(cgst + sgst)
+    hsn_summary, hsn_tot_taxable, hsn_tot_cgst, hsn_tot_sgst, hsn_tot_tax = build_hsn_summary(items)
+    tax_words = number_to_words_inr(hsn_tot_tax)
     grand_words = number_to_words_inr(total)
 
     env = Environment(loader=FileSystemLoader("templates"))
@@ -2880,6 +2927,10 @@ async def send_email_quotation(q_id: int, request: Request, email: str = Query(N
         sgst=sgst,
         total=total,
         hsn_summary=hsn_summary,
+        hsn_tot_taxable=hsn_tot_taxable,
+        hsn_tot_cgst=hsn_tot_cgst,
+        hsn_tot_sgst=hsn_tot_sgst,
+        hsn_tot_tax=hsn_tot_tax,
         tax_words=tax_words,
         grand_words=grand_words,
         savings=round(savings, 2),
@@ -2938,11 +2989,11 @@ def view_invoice_saved(i_id: int, request: Request):
         db.close()
         return HTMLResponse("<h1>Tax Invoice not found</h1>", status_code=404)
         
+    db = SessionLocal()
     items_rows = db.execute(text("""
         SELECT part_no, description, rate, quantity, amount, hsn, brand
         FROM invoice_items WHERE invoice_id = :iid
     """), {"iid": i_id}).fetchall()
-    db.close()
 
     active_store = getattr(invoice, 'store', get_active_store(request))
     default_make = "Multi" if active_store in ["divya", "leypart"] else "Mahindra"
@@ -2955,12 +3006,25 @@ def view_invoice_saved(i_id: int, request: Request):
         disc_amt = max(0.0, sub - taxable)
         disc_pct = round((disc_amt / sub) * 100, 2) if sub > 0 else 0.0
         make_val = getattr(r, 'brand', None) or default_make
+
+        hsn_code = (r.hsn or "").strip()
+        if not hsn_code and r.part_no:
+            p_row = db.execute(text("SELECT hsn FROM products WHERE part_no = :p LIMIT 1"), {"p": r.part_no}).fetchone()
+            if p_row and p_row.hsn:
+                hsn_code = str(p_row.hsn).strip()
+            else:
+                o_row = db.execute(text("SELECT hsn FROM order_items WHERE part_no = :p LIMIT 1"), {"p": r.part_no}).fetchone()
+                if o_row and o_row.hsn:
+                    hsn_code = str(o_row.hsn).strip()
+        if not hsn_code:
+            hsn_code = "87089900"
+
         items.append({
             "part_no": r.part_no,
             "description": r.description,
             "make": make_val,
             "brand": make_val,
-            "hsn": r.hsn,
+            "hsn": hsn_code,
             "rate": r.rate,
             "qty": r.quantity,
             "discount": disc_pct,
@@ -2969,12 +3033,14 @@ def view_invoice_saved(i_id: int, request: Request):
         subtotal += taxable
         savings += disc_amt
 
+    db.close()
+
     cgst = round(subtotal * 0.09, 2)
     sgst = round(subtotal * 0.09, 2)
     total = round(subtotal + cgst + sgst, 2)
     
-    hsn_summary, _, _, _, _ = build_hsn_summary(items)
-    tax_words = number_to_words_inr(cgst + sgst)
+    hsn_summary, hsn_tot_taxable, hsn_tot_cgst, hsn_tot_sgst, hsn_tot_tax = build_hsn_summary(items)
+    tax_words = number_to_words_inr(hsn_tot_tax)
     grand_words = number_to_words_inr(total)
 
     env = Environment(loader=FileSystemLoader("templates"))
@@ -2991,6 +3057,10 @@ def view_invoice_saved(i_id: int, request: Request):
         sgst=sgst,
         total=total,
         hsn_summary=hsn_summary,
+        hsn_tot_taxable=hsn_tot_taxable,
+        hsn_tot_cgst=hsn_tot_cgst,
+        hsn_tot_sgst=hsn_tot_sgst,
+        hsn_tot_tax=hsn_tot_tax,
         tax_words=tax_words,
         grand_words=grand_words,
         savings=round(savings, 2),
@@ -3626,8 +3696,8 @@ async def download_pdf(request: Request):
 
     savings = sum((it["rate"] * it["qty"]) - it["taxable"] for it in items)
 
-    hsn_summary, _, _, _, _ = build_hsn_summary(items)
-    tax_words = number_to_words_inr(cgst + sgst)
+    hsn_summary, hsn_tot_taxable, hsn_tot_cgst, hsn_tot_sgst, hsn_tot_tax = build_hsn_summary(items)
+    tax_words = number_to_words_inr(hsn_tot_tax)
     grand_words = number_to_words_inr(total)
 
     seller = get_seller_info(request)
@@ -3641,6 +3711,10 @@ async def download_pdf(request: Request):
         sgst=sgst,
         total=total,
         hsn_summary=hsn_summary,
+        hsn_tot_taxable=hsn_tot_taxable,
+        hsn_tot_cgst=hsn_tot_cgst,
+        hsn_tot_sgst=hsn_tot_sgst,
+        hsn_tot_tax=hsn_tot_tax,
         tax_words=tax_words,
         grand_words=grand_words,
         savings=round(savings, 2),
