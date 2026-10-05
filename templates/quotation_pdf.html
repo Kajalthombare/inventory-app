@@ -239,18 +239,85 @@ tr:nth-child(even) {
     </table>
 </div>
 
-<!-- TERMS & CONDITIONS AND SIGNATURE -->
-<div style="margin-top: 30px; display: flex; justify-content: space-between; align-items: flex-start; page-break-inside: avoid;">
-    <div style="width: 60%; font-size: 11px; color: #555; text-align: left;">
+{% if grand_words %}
+<div style="margin-top: 14px; margin-bottom: 14px; font-size: 12px; color: #0f172a; font-weight: 700; background: #f8fafc; padding: 8px 12px; border: 1px solid #e2e8f0; border-radius: 6px;">
+    Amount Chargeable (in words): <span style="font-weight: 600; font-style: italic; color: #1e293b;">{{ grand_words }}</span>
+</div>
+{% endif %}
+
+<!-- HSN / SAC TAX SUMMARY TABLE -->
+{% if hsn_summary %}
+<div style="margin-top: 20px; page-break-inside: avoid;">
+    <div style="font-size: 12px; font-weight: bold; color: #0f172a; margin-bottom: 6px;">HSN / SAC Tax Summary</div>
+    <table style="width: 100%; border-collapse: collapse; font-size: 12px; border: 1px solid #1e293b; margin-top: 0;">
+        <thead>
+            <tr style="background: #1e293b; color: #ffffff;">
+                <th style="border: 1px solid #1e293b; padding: 6px 8px; text-align: center;" rowspan="2">HSN/SAC</th>
+                <th style="border: 1px solid #1e293b; padding: 6px 8px; text-align: right;" rowspan="2">Taxable Value (₹)</th>
+                <th style="border: 1px solid #1e293b; padding: 6px 8px; text-align: center;" colspan="2">CGST</th>
+                <th style="border: 1px solid #1e293b; padding: 6px 8px; text-align: center;" colspan="2">SGST / UTGST</th>
+                <th style="border: 1px solid #1e293b; padding: 6px 8px; text-align: right;" rowspan="2">Total Tax Amount (₹)</th>
+            </tr>
+            <tr style="background: #334155; color: #ffffff;">
+                <th style="border: 1px solid #1e293b; padding: 4px 6px; text-align: center; font-size: 11px; width: 8%;">Rate</th>
+                <th style="border: 1px solid #1e293b; padding: 4px 6px; text-align: right; font-size: 11px; width: 14%;">Amount (₹)</th>
+                <th style="border: 1px solid #1e293b; padding: 4px 6px; text-align: center; font-size: 11px; width: 8%;">Rate</th>
+                <th style="border: 1px solid #1e293b; padding: 4px 6px; text-align: right; font-size: 11px; width: 14%;">Amount (₹)</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for h in hsn_summary %}
+            <tr style="background: {% if loop.index is even %}#f8fafc{% else %}#ffffff{% endif %};">
+                <td style="border: 1px solid #cbd5e1; padding: 6px 8px; text-align: center; font-weight: 600;">{{ h.hsn }}</td>
+                <td style="border: 1px solid #cbd5e1; padding: 6px 8px; text-align: right;">₹ {{ "%.2f"|format(h.taxable) }}</td>
+                <td style="border: 1px solid #cbd5e1; padding: 6px 8px; text-align: center;">9%</td>
+                <td style="border: 1px solid #cbd5e1; padding: 6px 8px; text-align: right;">₹ {{ "%.2f"|format(h.cgst_amount) }}</td>
+                <td style="border: 1px solid #cbd5e1; padding: 6px 8px; text-align: center;">9%</td>
+                <td style="border: 1px solid #cbd5e1; padding: 6px 8px; text-align: right;">₹ {{ "%.2f"|format(h.sgst_amount) }}</td>
+                <td style="border: 1px solid #cbd5e1; padding: 6px 8px; text-align: right; font-weight: 600;">₹ {{ "%.2f"|format(h.total_tax) }}</td>
+            </tr>
+            {% endfor %}
+            <tr style="background: #f1f5f9; font-weight: bold; border-top: 2px solid #0f172a;">
+                <td style="border: 1px solid #0f172a; padding: 6px 8px; text-align: center;">Total</td>
+                <td style="border: 1px solid #0f172a; padding: 6px 8px; text-align: right;">₹ {{ "%.2f"|format(subtotal) }}</td>
+                <td style="border: 1px solid #0f172a; padding: 6px 8px; text-align: center;"></td>
+                <td style="border: 1px solid #0f172a; padding: 6px 8px; text-align: right;">₹ {{ "%.2f"|format(cgst) }}</td>
+                <td style="border: 1px solid #0f172a; padding: 6px 8px; text-align: center;"></td>
+                <td style="border: 1px solid #0f172a; padding: 6px 8px; text-align: right;">₹ {{ "%.2f"|format(sgst) }}</td>
+                <td style="border: 1px solid #0f172a; padding: 6px 8px; text-align: right;">₹ {{ "%.2f"|format(cgst + sgst) }}</td>
+            </tr>
+        </tbody>
+    </table>
+    
+    {% if tax_words %}
+    <div style="margin-top: 8px; font-size: 11px; color: #334155; font-weight: 600;">
+        Tax Amount (in words): <span style="font-weight: normal; font-style: italic;">{{ tax_words }}</span>
+    </div>
+    {% endif %}
+</div>
+{% endif %}
+
+<!-- BANK DETAILS AND SIGNATURE -->
+<div style="margin-top: 24px; display: flex; justify-content: space-between; align-items: flex-start; page-break-inside: avoid;">
+    <div style="width: 60%; font-size: 11px; color: #334155; text-align: left;">
+        {% if seller and seller.bank_name %}
+        <div style="border: 1px solid #cbd5e1; padding: 8px 12px; border-radius: 6px; background: #f8fafc; margin-bottom: 12px;">
+            <div style="font-weight: bold; color: #0f172a; margin-bottom: 4px;">Company's Bank Details</div>
+            <div><strong>A/c Holder's Name :</strong> {{ seller.name }}</div>
+            <div><strong>Bank Name :</strong> {{ seller.bank_name }}</div>
+            <div><strong>A/c No. :</strong> {{ seller.account_no }}</div>
+            <div><strong>Branch & IFS Code :</strong> {{ seller.branch }} & {{ seller.ifsc }}</div>
+        </div>
+        {% endif %}
         {% if savings and savings > 0.01 %}
-        <div style="font-size: 13px; color: #15803d; font-weight: bold; margin-bottom: 12px; padding: 6px 10px; background: #f0fdf4; border-radius: 4px; border: 1px dashed #16a34a; display: inline-block;">
+        <div style="font-size: 12px; color: #15803d; font-weight: bold; padding: 6px 10px; background: #f0fdf4; border-radius: 4px; border: 1px dashed #16a34a; display: inline-block;">
             ★ You have saved ₹ {{ "%.2f"|format(savings) }} from this order!
         </div>
         {% endif %}
     </div>
-    <div class="signature" style="margin-top: 20px; text-align: right; width: 35%;">
-        <p style="margin-bottom: 50px;">Authorized Signatory</p>
-        <p>_______________________</p>
+    <div class="signature" style="margin-top: 10px; text-align: right; width: 35%;">
+        <p style="font-size: 11px; color: #475569; margin-bottom: 40px;">for <strong>{{ seller.name if seller else 'MAHINDRA PRO SPARES' }}</strong></p>
+        <p style="font-weight: bold; font-size: 12px;">Authorised Signatory</p>
     </div>
 </div>
 

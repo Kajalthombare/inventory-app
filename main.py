@@ -41,6 +41,103 @@ STORES = {
     "divya": "Divya Automobiles"
 }
 
+def number_to_words_inr(number):
+    try:
+        num = float(number)
+    except (ValueError, TypeError):
+        return ""
+    
+    if num == 0:
+        return "INR Zero Only"
+    
+    units = ["", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine"]
+    teens = ["Ten", "Eleven", "Twelve", "Thirteen", "Fourteen", "Fifteen", "Sixteen", "Seventeen", "Eighteen", "Nineteen"]
+    tens = ["", "", "Twenty", "Thirty", "Forty", "Fifty", "Sixty", "Seventy", "Eighty", "Ninety"]
+    
+    def convert_below_thousand(n):
+        words = ""
+        if n >= 100:
+            words += units[n // 100] + " Hundred "
+            n %= 100
+        if n >= 20:
+            words += tens[n // 10] + " "
+            n %= 10
+        elif n >= 10:
+            words += teens[n - 10] + " "
+            n = 0
+        if n > 0:
+            words += units[n] + " "
+        return words
+
+    integer_part = int(abs(num))
+    decimal_part = int(round((abs(num) - integer_part) * 100))
+
+    if integer_part == 0:
+        res = "Zero"
+    else:
+        res = ""
+        crore = integer_part // 10000000
+        rem = integer_part % 10000000
+        lakh = rem // 100000
+        rem %= 100000
+        thousand = rem // 1000
+        rem %= 1000
+
+        if crore > 0:
+            res += convert_below_thousand(crore) + "Crore "
+        if lakh > 0:
+            res += convert_below_thousand(lakh) + "Lakh "
+        if thousand > 0:
+            res += convert_below_thousand(thousand) + "Thousand "
+        if rem > 0:
+            res += convert_below_thousand(rem)
+
+    res = res.strip()
+    words_str = f"INR {res}"
+    if decimal_part > 0:
+        paisa_words = convert_below_thousand(decimal_part).strip()
+        words_str += f" and {paisa_words} Paise"
+    words_str += " Only"
+    return words_str
+
+
+def build_hsn_summary(items):
+    hsn_groups = {}
+    for item in items:
+        code = str(item.get("hsn", "") or "").strip() or "87089900"
+        taxable_val = float(item.get("taxable", 0.0) or 0.0)
+        if code not in hsn_groups:
+            hsn_groups[code] = 0.0
+        hsn_groups[code] += taxable_val
+
+    hsn_summary = []
+    tot_taxable = 0.0
+    tot_cgst = 0.0
+    tot_sgst = 0.0
+    tot_tax = 0.0
+
+    for code, taxable_val in hsn_groups.items():
+        t_val = round(taxable_val, 2)
+        c_amt = round(t_val * 0.09, 2)
+        s_amt = round(t_val * 0.09, 2)
+        t_tax = round(c_amt + s_amt, 2)
+        
+        tot_taxable += t_val
+        tot_cgst += c_amt
+        tot_sgst += s_amt
+        tot_tax += t_tax
+
+        hsn_summary.append({
+            "hsn": code,
+            "taxable": t_val,
+            "cgst_amount": c_amt,
+            "sgst_amount": s_amt,
+            "total_tax": t_tax
+        })
+
+    return hsn_summary, round(tot_taxable, 2), round(tot_cgst, 2), round(tot_sgst, 2), round(tot_tax, 2)
+
+
 STORE_DETAILS = {
     "mahindra": {
         "name": "MAHINDRA PRO SPARES",
@@ -49,7 +146,11 @@ STORE_DETAILS = {
         "pan": "BHIPM7720B",
         "gstin": "27BHIPM7720B1ZH",
         "contact": "+91-8652369813",
-        "email": "mahindraprospares@gmail.com"
+        "email": "mahindraprospares@gmail.com",
+        "bank_name": "IDBI BANK",
+        "account_no": "0725102000035820",
+        "ifsc": "IBKL0000725",
+        "branch": "KALAMBOLI"
     },
     "divya": {
         "name": "DIVYA AUTOMOBILES",
@@ -58,7 +159,11 @@ STORE_DETAILS = {
         "pan": "BHIPM7720B",
         "gstin": "27BHIPM7720B1ZH",
         "contact": "+91-8652369813",
-        "email": "gksarvindkumar8652@gmail.com"
+        "email": "gksarvindkumar8652@gmail.com",
+        "bank_name": "IDBI BANK",
+        "account_no": "0725102000035820",
+        "ifsc": "IBKL0000725",
+        "branch": "KALAMBOLI"
     }
 }
 
@@ -2268,6 +2373,10 @@ async def download_quotation_pdf(request: Request):
     total = round(subtotal + cgst + sgst, 2)
     date_str = datetime.now().strftime("%d-%b-%Y")
 
+    hsn_summary, _, _, _, _ = build_hsn_summary(items)
+    tax_words = number_to_words_inr(cgst + sgst)
+    grand_words = number_to_words_inr(total)
+
     env = Environment(loader=FileSystemLoader("templates"))
     template = env.get_template("quotation_pdf.html")
 
@@ -2281,6 +2390,9 @@ async def download_quotation_pdf(request: Request):
         cgst=cgst,
         sgst=sgst,
         total=total,
+        hsn_summary=hsn_summary,
+        tax_words=tax_words,
+        grand_words=grand_words,
         savings=round(savings, 2),
         date=date_str,
         buyer_name=customer_name,
@@ -2626,6 +2738,10 @@ def download_quotation_pdf_file(q_id: int, request: Request):
     sgst = round(subtotal * 0.09, 2)
     total = round(subtotal + cgst + sgst, 2)
     
+    hsn_summary, _, _, _, _ = build_hsn_summary(items)
+    tax_words = number_to_words_inr(cgst + sgst)
+    grand_words = number_to_words_inr(total)
+
     env = Environment(loader=FileSystemLoader("templates"))
     template = env.get_template("quotation_pdf.html")
 
@@ -2639,6 +2755,9 @@ def download_quotation_pdf_file(q_id: int, request: Request):
         cgst=cgst,
         sgst=sgst,
         total=total,
+        hsn_summary=hsn_summary,
+        tax_words=tax_words,
+        grand_words=grand_words,
         savings=round(savings, 2),
         date=safe_format_date(quotation.date),
         buyer_name=quotation.customer_name,
@@ -2743,6 +2862,10 @@ async def send_email_quotation(q_id: int, request: Request, email: str = Query(N
     sgst = round(subtotal * 0.09, 2)
     total = round(subtotal + cgst + sgst, 2)
     
+    hsn_summary, _, _, _, _ = build_hsn_summary(items)
+    tax_words = number_to_words_inr(cgst + sgst)
+    grand_words = number_to_words_inr(total)
+
     env = Environment(loader=FileSystemLoader("templates"))
     template = env.get_template("quotation_pdf.html")
 
@@ -2756,6 +2879,9 @@ async def send_email_quotation(q_id: int, request: Request, email: str = Query(N
         cgst=cgst,
         sgst=sgst,
         total=total,
+        hsn_summary=hsn_summary,
+        tax_words=tax_words,
+        grand_words=grand_words,
         savings=round(savings, 2),
         date=safe_format_date(quotation.date),
         buyer_name=quotation.customer_name,
@@ -2847,6 +2973,10 @@ def view_invoice_saved(i_id: int, request: Request):
     sgst = round(subtotal * 0.09, 2)
     total = round(subtotal + cgst + sgst, 2)
     
+    hsn_summary, _, _, _, _ = build_hsn_summary(items)
+    tax_words = number_to_words_inr(cgst + sgst)
+    grand_words = number_to_words_inr(total)
+
     env = Environment(loader=FileSystemLoader("templates"))
     template = env.get_template("quotation_pdf.html")
 
@@ -2860,6 +2990,9 @@ def view_invoice_saved(i_id: int, request: Request):
         cgst=cgst,
         sgst=sgst,
         total=total,
+        hsn_summary=hsn_summary,
+        tax_words=tax_words,
+        grand_words=grand_words,
         savings=round(savings, 2),
         date=safe_format_date(invoice.date),
         buyer_name=invoice.customer_name,
@@ -3493,6 +3626,10 @@ async def download_pdf(request: Request):
 
     savings = sum((it["rate"] * it["qty"]) - it["taxable"] for it in items)
 
+    hsn_summary, _, _, _, _ = build_hsn_summary(items)
+    tax_words = number_to_words_inr(cgst + sgst)
+    grand_words = number_to_words_inr(total)
+
     seller = get_seller_info(request)
     html = template.render(
         title="TAX INVOICE",
@@ -3503,6 +3640,9 @@ async def download_pdf(request: Request):
         cgst=cgst,
         sgst=sgst,
         total=total,
+        hsn_summary=hsn_summary,
+        tax_words=tax_words,
+        grand_words=grand_words,
         savings=round(savings, 2),
         date=datetime.now().strftime("%d-%b-%Y"),
         buyer_name=customer_name,
