@@ -2546,18 +2546,10 @@ async function verifyVendorGSTIN(quiet = false) {
             const vMobile = document.getElementById('purchase-vendor-mobile');
             const vEmail = document.getElementById('purchase-vendor-email');
             
-            if (vName && (!vName.value.trim() || vName.value.startsWith('Vendor Enterprises'))) {
-                vName.value = data.trade_name || data.legal_name || '';
-            }
-            if (vAddress && (!vAddress.value.trim() || vAddress.value.includes('Industrial Area'))) {
-                vAddress.value = data.address || '';
-            }
-            if (vMobile && !vMobile.value.trim() && data.mobile) {
-                vMobile.value = data.mobile;
-            }
-            if (vEmail && !vEmail.value.trim() && data.email) {
-                vEmail.value = data.email;
-            }
+            if (vName) vName.value = data.trade_name || data.legal_name || '';
+            if (vAddress) vAddress.value = data.address || '';
+            if (vMobile && data.mobile) vMobile.value = data.mobile;
+            if (vEmail && data.email) vEmail.value = data.email;
             
             if (!quiet && data.message) {
                 console.log("GSTIN Verification:", data.message);

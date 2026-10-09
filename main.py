@@ -1886,20 +1886,45 @@ def verify_gstin(gstin: str, request: Request):
                 "accept": "application/json"
             })
             
-            with urllib.request.urlopen(search_req, timeout=5) as search_res:
+            with urllib.request.urlopen(search_req, timeout=8) as search_res:
                 if search_res.status == 200:
                     res_json = json.loads(search_res.read().decode())
-                    inner_data = res_json.get("data", {}).get("data", {}) or res_json.get("data", {})
-                    lgnm = inner_data.get("lgnm", "")
-                    trade_name = inner_data.get("tradeNam", lgnm)
+                    top_data = res_json.get("data", {})
+                    
+                    # Check if GST Portal returned "No records found" or error_cd
+                    if "error_cd" in top_data or top_data.get("message") == "No records found":
+                        return {
+                            "success": False,
+                            "valid": False,
+                            "gstin": gstin_clean,
+                            "error": f"GSTIN '{gstin_clean}' not found on official GST Portal."
+                        }
+                        
+                    inner_data = top_data.get("data", {})
+                    if not inner_data or not inner_data.get("lgnm"):
+                        return {
+                            "success": False,
+                            "valid": False,
+                            "gstin": gstin_clean,
+                            "error": "No business details found for this GSTIN."
+                        }
+                    
+                    lgnm = inner_data.get("lgnm", "").strip()
+                    trade_name = inner_data.get("tradeNam", "").strip()
                     status_str = inner_data.get("sts", "Active")
                     taxpayer_type = inner_data.get("ctb", "Regular Taxpayer")
                     
+                    # Format display name: Trade Name (Legal Name) or Trade Name
+                    display_name = trade_name if trade_name else lgnm
+                    if trade_name and lgnm and trade_name.lower() != lgnm.lower():
+                        display_name = f"{trade_name} ({lgnm})"
+                        
                     adr = inner_data.get("pradr", {}).get("addr", {})
                     if adr:
                         addr_parts = [
-                            adr.get("bno", ""), adr.get("bnm", ""), adr.get("st", ""),
-                            adr.get("loc", ""), adr.get("dst", ""), adr.get("stcd", state_name)
+                            adr.get("bno", ""), adr.get("bnm", ""), adr.get("flno", ""),
+                            adr.get("st", ""), adr.get("loc", ""), adr.get("locality", ""),
+                            adr.get("dst", ""), adr.get("stcd", state_name)
                         ]
                         pncd = adr.get("pncd", "")
                         clean_addr = ", ".join([p.strip() for p in addr_parts if p and p.strip()])
@@ -1913,15 +1938,27 @@ def verify_gstin(gstin: str, request: Request):
                         "success": True,
                         "valid": True,
                         "gstin": gstin_clean,
-                        "legal_name": lgnm or trade_name,
-                        "trade_name": trade_name or lgnm,
+                        "legal_name": lgnm,
+                        "trade_name": display_name,
                         "address": full_addr,
                         "state": state_name,
                         "status": status_str,
                         "taxpayer_type": taxpayer_type,
                         "is_mock": False,
-                        "message": "Fetched live GST data from Government GSTN via Sandbox!"
+                        "message": "Fetched live GST details from Government GSTN!"
                     }
+        except urllib.error.HTTPError as he:
+            try:
+                err_body = json.loads(he.read().decode())
+                err_msg = err_body.get("message", "Invalid GSTIN pattern or not found on portal.")
+            except Exception:
+                err_msg = f"GST API error ({he.code})"
+            return {
+                "success": False,
+                "valid": False,
+                "gstin": gstin_clean,
+                "error": err_msg
+            }
         except Exception as e:
             print(f"Sandbox GST API error: {e}")
 
