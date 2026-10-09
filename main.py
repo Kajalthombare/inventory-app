@@ -1853,8 +1853,8 @@ def verify_gstin(gstin: str, request: Request):
     db.close()
     
     # 2. External GST API Call if API key configured (Sandbox.co.in)
-    api_key = os.environ.get("GST_API_KEY") or os.environ.get("SANDBOX_API_KEY")
-    api_secret = os.environ.get("GST_API_SECRET") or os.environ.get("SANDBOX_API_SECRET")
+    api_key = os.environ.get("GST_API_KEY") or os.environ.get("SANDBOX_API_KEY") or "key_live_00d3d25a37964ed58480fe34c718695b"
+    api_secret = os.environ.get("GST_API_SECRET") or os.environ.get("SANDBOX_API_SECRET") or "secret_live_0d520676dede45a795862a0fd01f784e"
     
     if api_key:
         try:
@@ -1970,9 +1970,9 @@ def verify_gstin(gstin: str, request: Request):
         mobile = existing_vendor.mobile_num or ""
         email = existing_vendor.email_id or ""
     else:
-        legal_name = f"Vendor Enterprises ({pan_number})"
-        trade_name = f"Vendor Auto Spares ({pan_number})"
-        address = f"Plot 12, Industrial Area, Sector 5, {state_name}"
+        legal_name = f"GST Registered Business ({pan_number})"
+        trade_name = f"GST Registered Business ({pan_number})"
+        address = f"Business Location, {state_name}"
         mobile = ""
         email = ""
         
