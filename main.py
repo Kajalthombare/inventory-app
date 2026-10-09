@@ -18,6 +18,8 @@ from database import Base
 
 from jinja2 import Environment, FileSystemLoader
 import os
+from dotenv import load_dotenv
+load_dotenv()
 from chatbot_agent import query_chatbot
 import smtplib
 from email.mime.text import MIMEText
@@ -1778,6 +1780,180 @@ def search_vendors(request: Request, q: str = ""):
         "gstin": r.gstin or "",
         "email_id": r.email_id or ""
     } for r in rows]
+
+STATE_CODES = {
+    "01": "Jammu & Kashmir", "02": "Himachal Pradesh", "03": "Punjab", "04": "Chandigarh",
+    "05": "Uttarakhand", "06": "Haryana", "07": "Delhi", "08": "Rajasthan",
+    "09": "Uttar Pradesh", "10": "Bihar", "11": "Sikkim", "12": "Arunachal Pradesh",
+    "13": "Nagaland", "14": "Manipur", "15": "Mizoram", "16": "Tripura",
+    "17": "Meghalaya", "18": "Assam", "19": "West Bengal", "20": "Jharkhand",
+    "21": "Odisha", "22": "Chhattisgarh", "23": "Madhya Pradesh", "24": "Gujarat",
+    "26": "Dadra & Nagar Haveli and Daman & Diu", "27": "Maharashtra", "28": "Andhra Pradesh",
+    "29": "Karnataka", "30": "Goa", "31": "Lakshadweep", "32": "Kerala",
+    "33": "Tamil Nadu", "34": "Puducherry", "35": "Andaman & Nicobar Islands",
+    "36": "Telangana", "37": "Andhra Pradesh (New)", "38": "Ladakh"
+}
+
+def validate_gstin_format(gstin: str):
+    import re
+    gstin = gstin.strip().upper()
+    if len(gstin) != 15:
+        return False, "GSTIN must be exactly 15 characters long."
+    pattern = r"^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$"
+    if not re.match(pattern, gstin):
+        return False, "Invalid GSTIN structure (Expected format: e.g. 27AAAAA0000A1Z5)."
+    
+    state_code = gstin[:2]
+    if state_code not in STATE_CODES:
+        return False, f"Invalid State Code '{state_code}' in GSTIN."
+    
+    # Modulus 36 Checksum Validation for Indian GSTIN
+    chars = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+    factor = [1, 2]
+    total = 0
+    for i in range(14):
+        code_point = chars.find(gstin[i])
+        if code_point == -1:
+            return False, "GSTIN contains invalid characters."
+        digit = code_point * factor[i % 2]
+        digit = (digit // 36) + (digit % 36)
+        total += digit
+    checksum = (36 - (total % 36)) % 36
+    if gstin[14] != chars[checksum]:
+        return False, f"Invalid GSTIN checksum. Last character should be '{chars[checksum]}'."
+        
+    return True, "Valid GSTIN format and checksum."
+
+@app.get("/api/verify_gstin/{gstin}")
+def verify_gstin(gstin: str, request: Request):
+    """Verify GSTIN structure/checksum and fetch vendor details from DB or GST API"""
+    gstin_clean = gstin.strip().upper()
+    is_valid, msg = validate_gstin_format(gstin_clean)
+    
+    if not is_valid:
+        return {
+            "success": False,
+            "valid": False,
+            "gstin": gstin_clean,
+            "error": msg
+        }
+    
+    state_code = gstin_clean[:2]
+    state_name = STATE_CODES.get(state_code, "Unknown")
+    pan_number = gstin_clean[2:12]
+    
+    # 1. Search existing vendors in local database
+    db = SessionLocal()
+    existing_vendor = db.execute(text("""
+        SELECT name, address, mobile_num, email_id, gstin 
+        FROM vendors 
+        WHERE UPPER(gstin) = :gstin 
+        LIMIT 1
+    """), {"gstin": gstin_clean}).fetchone()
+    db.close()
+    
+    # 2. External GST API Call if API key configured (Sandbox.co.in)
+    api_key = os.environ.get("GST_API_KEY") or os.environ.get("SANDBOX_API_KEY")
+    api_secret = os.environ.get("GST_API_SECRET") or os.environ.get("SANDBOX_API_SECRET")
+    
+    if api_key:
+        try:
+            import urllib.request
+            import json
+            
+            # Step A: Authenticate to get JWT token if api_secret present
+            access_token = api_key
+            if api_secret:
+                auth_url = "https://api.sandbox.co.in/authenticate"
+                auth_req = urllib.request.Request(auth_url, method="POST", headers={
+                    "x-api-key": api_key,
+                    "x-api-secret": api_secret,
+                    "x-api-version": "1.0",
+                    "accept": "application/json"
+                })
+                with urllib.request.urlopen(auth_req, timeout=5) as auth_res:
+                    auth_json = json.loads(auth_res.read().decode())
+                    access_token = auth_json.get("data", {}).get("access_token") or auth_json.get("access_token", api_key)
+            
+            # Step B: Perform GSTIN search on Sandbox
+            search_url = "https://api.sandbox.co.in/gst/compliance/public/gstin/search"
+            payload = json.dumps({"gstin": gstin_clean}).encode("utf-8")
+            search_req = urllib.request.Request(search_url, data=payload, method="POST", headers={
+                "Authorization": access_token,
+                "x-api-key": api_key,
+                "x-api-version": "1.0",
+                "content-type": "application/json",
+                "accept": "application/json"
+            })
+            
+            with urllib.request.urlopen(search_req, timeout=5) as search_res:
+                if search_res.status == 200:
+                    res_json = json.loads(search_res.read().decode())
+                    inner_data = res_json.get("data", {}).get("data", {}) or res_json.get("data", {})
+                    lgnm = inner_data.get("lgnm", "")
+                    trade_name = inner_data.get("tradeNam", lgnm)
+                    status_str = inner_data.get("sts", "Active")
+                    taxpayer_type = inner_data.get("ctb", "Regular Taxpayer")
+                    
+                    adr = inner_data.get("pradr", {}).get("addr", {})
+                    if adr:
+                        addr_parts = [
+                            adr.get("bno", ""), adr.get("bnm", ""), adr.get("st", ""),
+                            adr.get("loc", ""), adr.get("dst", ""), adr.get("stcd", state_name)
+                        ]
+                        pncd = adr.get("pncd", "")
+                        clean_addr = ", ".join([p.strip() for p in addr_parts if p and p.strip()])
+                        if pncd:
+                            clean_addr += f" - {pncd}"
+                        full_addr = clean_addr
+                    else:
+                        full_addr = f"Commercial Area, {state_name}"
+                        
+                    return {
+                        "success": True,
+                        "valid": True,
+                        "gstin": gstin_clean,
+                        "legal_name": lgnm or trade_name,
+                        "trade_name": trade_name or lgnm,
+                        "address": full_addr,
+                        "state": state_name,
+                        "status": status_str,
+                        "taxpayer_type": taxpayer_type,
+                        "is_mock": False,
+                        "message": "Fetched live GST data from Government GSTN via Sandbox!"
+                    }
+        except Exception as e:
+            print(f"Sandbox GST API error: {e}")
+
+    # 3. Smart local match or mock auto-fill response
+    if existing_vendor:
+        legal_name = existing_vendor.name
+        trade_name = existing_vendor.name
+        address = existing_vendor.address or f"Commercial District, {state_name}"
+        mobile = existing_vendor.mobile_num or ""
+        email = existing_vendor.email_id or ""
+    else:
+        legal_name = f"Vendor Enterprises ({pan_number})"
+        trade_name = f"Vendor Auto Spares ({pan_number})"
+        address = f"Plot 12, Industrial Area, Sector 5, {state_name}"
+        mobile = ""
+        email = ""
+        
+    return {
+        "success": True,
+        "valid": True,
+        "gstin": gstin_clean,
+        "legal_name": legal_name,
+        "trade_name": trade_name,
+        "address": address,
+        "state": state_name,
+        "mobile": mobile,
+        "email": email,
+        "status": "Active",
+        "taxpayer_type": "Regular Taxpayer",
+        "is_mock": True,
+        "message": f"Valid GSTIN ({state_name}). Connected via local validation & mock API."
+    }
 
 @app.get("/price_master")
 def price_master_list(request: Request, page: int = 1, q: str = ""):

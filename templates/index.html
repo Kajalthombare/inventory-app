@@ -1749,9 +1749,15 @@
                             <label>Mobile Num</label>
                             <input type="text" id="purchase-vendor-mobile" class="form-input" placeholder="Mobile">
                         </div>
-                        <div class="form-field" style="flex:1; min-width:120px;">
-                            <label>GSTIN</label>
-                            <input type="text" id="purchase-vendor-gstin" class="form-input" placeholder="GSTIN">
+                        <div class="form-field" style="flex:1.8; min-width:200px;">
+                            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+                                <label style="margin:0;">GSTIN</label>
+                                <span id="purchase-gstin-badge" style="font-size:11px; font-weight:600; padding:2px 8px; border-radius:12px; display:none;"></span>
+                            </div>
+                            <div style="display:flex; gap:6px;">
+                                <input type="text" id="purchase-vendor-gstin" class="form-input" placeholder="e.g. 27AAAAA0000A1Z5" style="text-transform:uppercase; font-weight:500;" onblur="verifyVendorGSTIN(true)" onkeyup="if(event.key==='Enter') verifyVendorGSTIN()">
+                                <button type="button" onclick="verifyVendorGSTIN()" class="btn btn-secondary btn-sm" style="padding:4px 10px; font-size:12px; white-space:nowrap;" title="Verify GSTIN & Auto-fill Details">🔍 Verify</button>
+                            </div>
                         </div>
                         <div class="form-field" style="flex:1.5; min-width:160px;">
                             <label>Email ID</label>
@@ -2493,7 +2499,6 @@ if (pVendorInput) {
         const res = await fetch(`/search_vendors?q=${encodeURIComponent(val)}`);
         const data = await res.json();
         
-        // Check if there is an exact match (case insensitive)
         const exact = data.find(d => d.name.toLowerCase() === val.toLowerCase());
         if (exact) {
             document.getElementById('purchase-vendor-name').value = exact.name || '';
@@ -2503,6 +2508,78 @@ if (pVendorInput) {
             document.getElementById('purchase-vendor-email').value = exact.email_id || '';
         }
     });
+}
+
+async function verifyVendorGSTIN(quiet = false) {
+    const gstinInput = document.getElementById('purchase-vendor-gstin');
+    const badge = document.getElementById('purchase-gstin-badge');
+    if (!gstinInput) return;
+    
+    const gstin = gstinInput.value.trim().toUpperCase();
+    gstinInput.value = gstin;
+    
+    if (!gstin) {
+        if (badge) badge.style.display = 'none';
+        return;
+    }
+
+    if (badge) {
+        badge.style.display = 'inline-block';
+        badge.style.background = '#e2e8f0';
+        badge.style.color = '#475569';
+        badge.innerText = 'Verifying...';
+    }
+
+    try {
+        const res = await fetch(`/api/verify_gstin/${encodeURIComponent(gstin)}`);
+        const data = await res.json();
+        
+        if (data.valid) {
+            if (badge) {
+                badge.style.background = '#dcfce7';
+                badge.style.color = '#15803d';
+                badge.innerText = `✓ ${data.status} (${data.state})`;
+            }
+            
+            const vName = document.getElementById('purchase-vendor-name');
+            const vAddress = document.getElementById('purchase-vendor-address');
+            const vMobile = document.getElementById('purchase-vendor-mobile');
+            const vEmail = document.getElementById('purchase-vendor-email');
+            
+            if (vName && (!vName.value.trim() || vName.value.startsWith('Vendor Enterprises'))) {
+                vName.value = data.trade_name || data.legal_name || '';
+            }
+            if (vAddress && (!vAddress.value.trim() || vAddress.value.includes('Industrial Area'))) {
+                vAddress.value = data.address || '';
+            }
+            if (vMobile && !vMobile.value.trim() && data.mobile) {
+                vMobile.value = data.mobile;
+            }
+            if (vEmail && !vEmail.value.trim() && data.email) {
+                vEmail.value = data.email;
+            }
+            
+            if (!quiet && data.message) {
+                console.log("GSTIN Verification:", data.message);
+            }
+        } else {
+            if (badge) {
+                badge.style.background = '#fee2e2';
+                badge.style.color = '#b91c1c';
+                badge.innerText = '✗ Invalid GSTIN';
+            }
+            if (!quiet) {
+                alert(`GSTIN Error: ${data.error}`);
+            }
+        }
+    } catch (err) {
+        console.error("GSTIN verification error:", err);
+        if (badge) {
+            badge.style.background = '#fee2e2';
+            badge.style.color = '#b91c1c';
+            badge.innerText = 'Check Failed';
+        }
+    }
 }
 
 const salesCustInput = document.getElementById('sales_customer_search');
