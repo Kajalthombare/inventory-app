@@ -3127,12 +3127,32 @@ function addPORow(focus = false) {
 }
 
 function poPick(i, d) {
-    poRows[i].part_no   = d.part_no;
+    poRows[i].part_no    = d.part_no;
     poRows[i].description = d.description;
-    poRows[i].rate      = d.rate;
-    poRows[i].hsn       = d.hsn;
-    poRows[i].brand     = d.brand || d.make || '';
+    poRows[i].rate       = d.rate;
+    poRows[i].hsn        = d.hsn;
+    poRows[i].brand      = d.brand || d.make || '';
     renderPORows('po-qty-' + i);
+}
+
+async function fetchPOPart(i) {
+    const pno = (poRows[i].part_no || '').trim().toUpperCase();
+    if (!pno) return;
+    // If description already filled (from dropdown pick), skip
+    if (poRows[i].description && poRows[i].rate) return;
+    try {
+        const res = await fetch('/search_parts?q=' + encodeURIComponent(pno));
+        const data = await res.json();
+        // Find exact match first, else use first result
+        const exact = data.find(d => d.part_no.toUpperCase() === pno) || data[0];
+        if (exact) {
+            poRows[i].description = exact.description || '';
+            poRows[i].rate        = exact.rate || 0;
+            poRows[i].hsn         = exact.hsn || '';
+            poRows[i].brand       = exact.brand || exact.make || '';
+            renderPORows('po-qty-' + i);
+        }
+    } catch(e) {}
 }
 
 function renderPORows(focusId) {
@@ -3152,7 +3172,8 @@ function renderPORows(focusId) {
             <td style="position:relative;">
                 <input id="po-pno-${i}" value="${r.part_no || ''}"
                     oninput="acSearch(this,document.getElementById('po-ac-${i}'),function(d){poPick(${i},d);})"
-                    onblur="poRows[${i}].part_no=this.value.trim().toUpperCase();this.value=poRows[${i}].part_no;"
+                    onblur="poRows[${i}].part_no=this.value.trim().toUpperCase();this.value=poRows[${i}].part_no;setTimeout(function(){fetchPOPart(${i});},150);"
+                    onkeydown="if(event.key==='Enter'||event.key==='Tab'){poRows[${i}].part_no=this.value.trim().toUpperCase();fetchPOPart(${i});}"
                     class="q-table-input" placeholder="Part No or search…" style="min-width:170px;" autocomplete="off">
                 <div id="po-ac-${i}" class="ac-list"></div>
             </td>
