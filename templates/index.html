@@ -1177,6 +1177,9 @@
         <a class="nav-item" href="#quotation-section">
             <span class="nav-icon">📋</span> Proforma Invoice
         </a>
+        <a class="nav-item" href="#purchase-order-section">
+            <span class="nav-icon">🛍️</span> Purchase Order
+        </a>
         <a class="nav-item" href="#invoice-section">
             <span class="nav-icon">🧾</span> Raise Invoice
         </a>
@@ -1492,6 +1495,89 @@
                         </div>
                     </div>
                     <div id="quotation-list"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ══ PURCHASE ORDER ══ -->
+        <div class="section-card" id="purchase-order-section">
+            <div class="section-header">
+                <div class="section-title">🛍️ Purchase Order <span style="font-size:11px;font-weight:400;color:var(--text-muted);margin-left:8px;">— Send to supplier/vendor. Does NOT affect stock.</span></div>
+                <div style="display:flex;gap:8px;">
+                    <button onclick="addPORow()" class="btn btn-ghost btn-sm">+ Add Row</button>
+                    <button onclick="downloadPurchaseOrderPDF()" class="btn btn-primary btn-sm">📄 Download PDF</button>
+                    <button id="po_save_btn" onclick="savePurchaseOrder()" class="btn btn-success btn-sm" style="background:#7c3aed;">💾 Save PO</button>
+                </div>
+            </div>
+            <div class="section-body">
+                <div id="po_edit_banner" style="display:none; background:#f5f3ff; border:1px solid #ddd6fe; color:#6d28d9; padding:8px 14px; border-radius:8px; margin-bottom:12px; align-items:center; justify-content:space-between; font-size:13px; font-weight:600;">
+                    <span id="po_edit_banner_text">✏️ Editing Purchase Order...</span>
+                    <button onclick="cancelPOEdit()" class="btn btn-ghost btn-sm" style="color:#6d28d9;">Cancel Editing</button>
+                </div>
+
+                <!-- Vendor Details -->
+                <div class="form-row" style="margin-bottom:12px; gap:12px;">
+                    <div class="form-field" style="position:relative;flex:2;">
+                        <label>Vendor / Supplier Name</label>
+                        <input type="text" id="po_vendor" class="form-input" placeholder="Enter vendor name (optional)" autocomplete="off">
+                        <div id="po_vendor_ac" class="ac-list"></div>
+                    </div>
+                    <div class="form-field" style="flex:2;">
+                        <label>Vendor Address</label>
+                        <input type="text" id="po_vendor_address" class="form-input" placeholder="Enter vendor address (optional)">
+                    </div>
+                    <div class="form-field" style="flex:1;">
+                        <label>Mobile / Contact</label>
+                        <input type="text" id="po_vendor_mobile" class="form-input" placeholder="Mobile (optional)">
+                    </div>
+                    <div class="form-field" style="flex:1;">
+                        <label>Vendor GSTIN</label>
+                        <input type="text" id="po_vendor_gstin" class="form-input" placeholder="GSTIN (optional)">
+                    </div>
+                    <div class="form-field" style="flex:1.5;">
+                        <label>Vendor Email</label>
+                        <input type="text" id="po_vendor_email" class="form-input" placeholder="Email (optional)">
+                    </div>
+                </div>
+                <div class="form-row" style="margin-bottom:14px; gap:12px;">
+                    <div class="form-field" style="flex:2;">
+                        <label>Delivery Address</label>
+                        <input type="text" id="po_delivery_address" class="form-input" placeholder="Delivery address (optional)">
+                    </div>
+                    <div class="form-field" style="flex:1;">
+                        <label>Payment Terms</label>
+                        <input type="text" id="po_payment_terms" class="form-input" placeholder="e.g. Net 30 days (optional)">
+                    </div>
+                </div>
+
+                <!-- Items Table -->
+                <div class="table-wrap">
+                    <table class="data-table" id="po_table">
+                        <thead>
+                            <tr>
+                                <th style="min-width: 180px;">Part No</th>
+                                <th style="min-width: 250px;">Description</th>
+                                <th>Purchase Rate (₹)</th>
+                                <th>Qty</th>
+                                <th>Discount %</th>
+                                <th>Total (₹)</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody id="po_body"></tbody>
+                    </table>
+                </div>
+                <div class="grand-total-row">
+                    <span class="grand-total-label">Grand Total (incl. 18% GST)</span>
+                    <span class="grand-total-value">₹ <span id="po_grand_total">0.00</span></span>
+                </div>
+
+                <!-- Saved POs list -->
+                <div id="po-list-wrap" style="margin-top:30px; border-top: 1px solid var(--border); padding-top: 20px;">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; flex-wrap:wrap; gap:10px;">
+                        <div style="font-size:14px; font-weight:700; color:var(--text);">🛍️ Saved Purchase Orders</div>
+                    </div>
+                    <div id="po-list"></div>
                 </div>
             </div>
         </div>
@@ -3029,7 +3115,215 @@ addQRow();
 loadQuotationList();
 
 // ══════════════════════════════════════════
-// INVOICE TAB (deducts stock + sales report)
+// PURCHASE ORDER TAB
+// ══════════════════════════════════════════
+let poRows = [];
+let editing_po_id = null;
+
+function addPORow(focus = false) {
+    poRows.push({ part_no: '', description: '', rate: 0, qty: 1, discount: 0, hsn: '' });
+    const newIdx = poRows.length - 1;
+    renderPORows(focus ? `po-pno-${newIdx}` : null);
+}
+
+function renderPORows(focusId = null) {
+    const tbody = document.getElementById('po_body');
+    if (!tbody) return;
+    tbody.innerHTML = '';
+    let grandTotal = 0;
+    poRows.forEach((row, i) => {
+        const sub = row.rate * row.qty;
+        const disc = sub * (row.discount / 100);
+        const lineTotal = sub - disc;
+        const lineGst = lineTotal * 1.18;
+        grandTotal += lineGst;
+
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+            <td style="position:relative;">
+                <input id="po-pno-${i}" class="q-table-input" value="${row.part_no}" placeholder="Part No" autocomplete="off"
+                    oninput="poRows[${i}].part_no=this.value; lookupPOPart(${i});"
+                    onblur="setTimeout(()=>{ const ac=document.getElementById('po-ac-${i}'); if(ac) ac.style.display='none'; },200)">
+                <div id="po-ac-${i}" class="ac-list"></div>
+            </td>
+            <td><input class="q-table-input" value="${row.description}" placeholder="Description"
+                oninput="poRows[${i}].description=this.value;"></td>
+            <td><input class="q-table-input" type="number" min="0" step="0.01" value="${row.rate}"
+                oninput="poRows[${i}].rate=parseFloat(this.value)||0; renderPORows();" style="width:100px;"></td>
+            <td><input class="qty-input" type="number" min="1" value="${row.qty}"
+                oninput="poRows[${i}].qty=parseInt(this.value)||1; renderPORows();" style="width:70px;"></td>
+            <td><input class="qty-input" type="number" min="0" max="100" step="0.1" value="${row.discount}"
+                oninput="poRows[${i}].discount=parseFloat(this.value)||0; renderPORows();" style="width:70px;"></td>
+            <td><b>₹ ${lineGst.toFixed(2)}</b></td>
+            <td><button onclick="removePORow(${i})" class="btn btn-danger btn-sm" style="padding:3px 8px;">✕</button></td>
+        `;
+        tbody.appendChild(tr);
+    });
+    const gtEl = document.getElementById('po_grand_total');
+    if (gtEl) gtEl.textContent = grandTotal.toFixed(2);
+    if (focusId) {
+        const el = document.getElementById(focusId);
+        if (el) el.focus();
+    }
+}
+
+function removePORow(i) {
+    poRows.splice(i, 1);
+    renderPORows();
+}
+
+async function lookupPOPart(i) {
+    const pno = poRows[i].part_no.trim();
+    const ac = document.getElementById(`po-ac-${i}`);
+    if (!ac) return;
+    if (pno.length < 2) { ac.style.display = 'none'; return; }
+    const res = await fetch(`/autocomplete_part?q=${encodeURIComponent(pno)}`);
+    const data = await res.json();
+    if (!data.length) { ac.style.display = 'none'; return; }
+    ac.innerHTML = data.map(p => `
+        <div class="ac-item" onmousedown="selectPOPart(${i}, '${p.part_no.replace(/'/g,"\\'")}', '${(p.description||'').replace(/'/g,"\\'")}', ${p.rate||0}, '${p.hsn||''}')">
+            <b>${p.part_no}</b> — ${p.description || ''} &nbsp; <span style="color:var(--success);">₹${p.rate||0}</span>
+        </div>`).join('');
+    ac.style.display = 'block';
+}
+
+function selectPOPart(i, pno, desc, rate, hsn) {
+    poRows[i].part_no = pno;
+    poRows[i].description = desc;
+    poRows[i].rate = rate;
+    poRows[i].hsn = hsn;
+    renderPORows();
+    const ac = document.getElementById(`po-ac-${i}`);
+    if (ac) ac.style.display = 'none';
+}
+
+async function downloadPurchaseOrderPDF() {
+    const rows = poRows.filter(r => r.part_no && r.qty > 0);
+    if (!rows.length) { alert('Please add at least one item with a part number and quantity > 0'); return; }
+    const res = await fetch('/download_purchase_order_pdf', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            rows,
+            vendor_name: document.getElementById('po_vendor').value.trim(),
+            vendor_address: document.getElementById('po_vendor_address').value.trim(),
+            vendor_gstin: document.getElementById('po_vendor_gstin').value.trim(),
+            vendor_mobile: document.getElementById('po_vendor_mobile').value.trim(),
+            vendor_email: document.getElementById('po_vendor_email').value.trim(),
+            delivery_address: document.getElementById('po_delivery_address').value.trim(),
+            payment_terms: document.getElementById('po_payment_terms').value.trim()
+        })
+    });
+    const html = await res.text();
+    const win = window.open('', '_blank');
+    if (win) { win.document.write(html); win.document.close(); }
+}
+
+async function savePurchaseOrder() {
+    const rows = poRows.filter(r => r.part_no && r.qty > 0);
+    if (!rows.length) { alert('Please add at least one item with a part number and quantity > 0'); return; }
+    const url = editing_po_id ? `/update_purchase_order/${editing_po_id}` : '/save_purchase_order';
+    const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            rows,
+            vendor_name: document.getElementById('po_vendor').value.trim(),
+            vendor_address: document.getElementById('po_vendor_address').value.trim(),
+            vendor_gstin: document.getElementById('po_vendor_gstin').value.trim(),
+            vendor_mobile: document.getElementById('po_vendor_mobile').value.trim(),
+            vendor_email: document.getElementById('po_vendor_email').value.trim(),
+            delivery_address: document.getElementById('po_delivery_address').value.trim(),
+            payment_terms: document.getElementById('po_payment_terms').value.trim()
+        })
+    });
+    const data = await res.json();
+    if (data.error) { alert('Error: ' + data.error); return; }
+    alert(editing_po_id
+        ? `✅ Purchase Order ${data.po_no} updated successfully!`
+        : `✅ Purchase Order saved: ${data.po_no}`
+    );
+    cancelPOEdit();
+    loadPurchaseOrderList();
+}
+
+async function editPurchaseOrder(po_id) {
+    const res = await fetch(`/purchase_order_details/${po_id}`);
+    const data = await res.json();
+    if (data.error) { alert('Error loading Purchase Order: ' + data.error); return; }
+    document.getElementById('po_vendor').value = data.vendor_name || '';
+    document.getElementById('po_vendor_address').value = data.vendor_address || '';
+    document.getElementById('po_vendor_gstin').value = data.vendor_gstin || '';
+    document.getElementById('po_vendor_mobile').value = data.vendor_mobile || '';
+    document.getElementById('po_vendor_email').value = data.vendor_email || '';
+    document.getElementById('po_delivery_address').value = data.delivery_address || '';
+    document.getElementById('po_payment_terms').value = data.payment_terms || '';
+    poRows = (data.items || []).map(it => ({
+        part_no: it.part_no,
+        description: it.description,
+        rate: it.rate,
+        qty: it.qty,
+        discount: it.discount,
+        hsn: it.hsn
+    }));
+    renderPORows();
+    editing_po_id = po_id;
+    const banner = document.getElementById('po_edit_banner');
+    if (banner) { banner.style.display = 'flex'; }
+    document.getElementById('po_edit_banner_text').textContent = `✏️ Editing Purchase Order: ${data.po_no} (Click 'Update PO' to save changes)`;
+    document.getElementById('po_save_btn').textContent = '💾 Update PO';
+    document.getElementById('purchase-order-section').scrollIntoView({ behavior: 'smooth' });
+}
+
+function cancelPOEdit() {
+    editing_po_id = null;
+    poRows = [];
+    renderPORows();
+    document.getElementById('po_vendor').value = '';
+    document.getElementById('po_vendor_address').value = '';
+    document.getElementById('po_vendor_gstin').value = '';
+    document.getElementById('po_vendor_mobile').value = '';
+    document.getElementById('po_vendor_email').value = '';
+    document.getElementById('po_delivery_address').value = '';
+    document.getElementById('po_payment_terms').value = '';
+    const banner = document.getElementById('po_edit_banner');
+    if (banner) banner.style.display = 'none';
+    document.getElementById('po_save_btn').textContent = '💾 Save PO';
+    addPORow();
+}
+
+async function loadPurchaseOrderList() {
+    const res = await fetch('/purchase_orders');
+    const data = await res.json();
+    const listEl = document.getElementById('po-list');
+    if (!listEl) return;
+    if (!data.length) {
+        listEl.innerHTML = '<div style="color:var(--text-muted);font-size:13px;">No purchase orders yet.</div>';
+        return;
+    }
+    listEl.innerHTML = `<div class="table-wrap"><table class="data-table" style="font-size:12px; min-width:750px;">
+        <thead><tr>
+            <th>PO No</th><th>Vendor</th><th>Date</th><th>Grand Total (₹)</th><th style="width:220px;text-align:center;">Actions</th>
+        </tr></thead>
+        <tbody>
+        ${data.map(p => `<tr>
+            <td style="font-weight:600; color:#7c3aed;">${p.po_no}</td>
+            <td>${p.vendor_name || '—'}</td>
+            <td>${p.date}</td>
+            <td style="font-weight:600;">₹ ${parseFloat(p.grand_total).toFixed(2)}</td>
+            <td style="text-align:center;">
+                <button onclick="editPurchaseOrder(${p.id})" class="btn btn-ghost btn-sm" style="padding:2px 8px;font-size:11px;color:#7c3aed;border:none;background:none;cursor:pointer;font-weight:600;">✏️ Edit</button>
+                <a href="/view_purchase_order_saved/${p.id}" target="_blank" class="btn btn-ghost btn-sm" style="padding:2px 8px;font-size:11px;color:var(--primary);text-decoration:none;">👁️ View</a>
+            </td>
+        </tr>`).join('')}
+        </tbody>
+    </table></div>`;
+}
+
+addPORow();
+loadPurchaseOrderList();
+
+
 // ══════════════════════════════════════════
 let invRows = [];
 
@@ -3667,6 +3961,7 @@ function initTabs() {
         'sales-section',
         'purchase-section',
         'quotation-section',
+        'purchase-order-section',
         'invoice-section',
         'order-book-section',
         'price-master-section',
@@ -3689,6 +3984,9 @@ function initTabs() {
         }
         if (targetId === 'quotation-section') {
             loadQuotationList();
+        }
+        if (targetId === 'purchase-order-section') {
+            loadPurchaseOrderList();
         }
         if (targetId === 'invoice-section') {
             loadInvoiceList();

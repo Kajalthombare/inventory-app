@@ -644,6 +644,35 @@ class Purchase(Base):
     store = Column(String(50), default="mahindra", index=True)
     brand = Column(String(100), default="Mahindra")
 
+class PurchaseOrder(Base):
+    __tablename__ = "purchase_orders"
+    id = Column(Integer, primary_key=True)
+    po_no = Column(String(50))
+    vendor_name = Column(String(255), default="")
+    vendor_address = Column(String(255), default="")
+    vendor_gstin = Column(String(50), default="")
+    vendor_mobile = Column(String(50), default="")
+    vendor_email = Column(String(255), default="")
+    delivery_address = Column(String(255), default="")
+    payment_terms = Column(String(255), default="")
+    date = Column(DateTime, default=datetime.utcnow)
+    total_amount = Column(Float, default=0.0)
+    grand_total = Column(Float, default=0.0)
+    store = Column(String(50), default="mahindra", index=True)
+
+class PurchaseOrderItem(Base):
+    __tablename__ = "purchase_order_items"
+    id = Column(Integer, primary_key=True)
+    po_id = Column(Integer)
+    part_no = Column(String(100))
+    description = Column(String(255))
+    rate = Column(Float)
+    qty = Column(Integer)
+    discount = Column(Float)
+    amount = Column(Float)
+    hsn = Column(String(50), default="")
+    brand = Column(String(100), default="Mahindra")
+
 Base.metadata.create_all(bind=engine)
 
 def format_inr(amount):
@@ -3482,8 +3511,373 @@ def export_all_quotations_excel(
         headers={"Content-Disposition": "attachment; filename=proforma_sales.xlsx"}
     )
 
+# ---------------- PURCHASE ORDER ----------------
+
+def generate_po_no(db, store):
+    import calendar
+    today = datetime.now()
+    year_month = today.strftime("%Y-%m")
+    first_day = today.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    last_day_num = calendar.monthrange(today.year, today.month)[1]
+    last_day = today.replace(day=last_day_num, hour=23, minute=59, second=59, microsecond=999999)
+    count = db.execute(text("""
+        SELECT COUNT(*) FROM purchase_orders WHERE store = :store AND date >= :fd AND date <= :ld
+    """), {"store": store, "fd": first_day, "ld": last_day}).scalar()
+    prefix = "DA" if store == "divya" else "MP"
+    return f"PO-{prefix}-{year_month}-{str(count+1).zfill(3)}"
+
+@app.post("/save_purchase_order")
+async def save_purchase_order(request: Request):
+    """Save Purchase Order to DB — does NOT affect stock or purchases"""
+    active_store = get_active_store(request)
+    data = await request.json()
+    db = SessionLocal()
+    rows = data.get("rows", [])
+    vendor_name = data.get("vendor_name", "")
+    vendor_address = data.get("vendor_address", "")
+    vendor_gstin = data.get("vendor_gstin", "")
+    vendor_mobile = data.get("vendor_mobile", "")
+    vendor_email = data.get("vendor_email", "")
+    delivery_address = data.get("delivery_address", "")
+    payment_terms = data.get("payment_terms", "")
+
+    if not rows:
+        db.close()
+        return {"error": "No products"}
+
+    # Save/update vendor record
+    if vendor_name and vendor_name.strip():
+        v_name = vendor_name.strip()
+        existing_vendor = db.query(Vendor).filter(Vendor.name == v_name, Vendor.store == active_store).first()
+        if existing_vendor:
+            if vendor_address: existing_vendor.address = vendor_address.strip()
+            if vendor_mobile: existing_vendor.mobile_num = vendor_mobile.strip()
+            if vendor_gstin: existing_vendor.gstin = vendor_gstin.strip()
+            if vendor_email: existing_vendor.email_id = vendor_email.strip()
+        else:
+            db.add(Vendor(
+                name=v_name,
+                address=vendor_address.strip() if vendor_address else "",
+                mobile_num=vendor_mobile.strip() if vendor_mobile else "",
+                gstin=vendor_gstin.strip() if vendor_gstin else "",
+                email_id=vendor_email.strip() if vendor_email else "",
+                store=active_store
+            ))
+        db.commit()
+
+    total_amount = sum(r["rate"] * r["qty"] * (1 - r.get("discount", 0) / 100) for r in rows)
+    grand_total = total_amount * 1.18
+    po_no = generate_po_no(db, active_store)
+
+    po = PurchaseOrder(
+        po_no=po_no,
+        vendor_name=vendor_name,
+        vendor_address=vendor_address,
+        vendor_gstin=vendor_gstin,
+        vendor_mobile=vendor_mobile,
+        vendor_email=vendor_email,
+        delivery_address=delivery_address,
+        payment_terms=payment_terms,
+        date=datetime.now(),
+        total_amount=round(total_amount, 2),
+        grand_total=round(grand_total, 2),
+        store=active_store
+    )
+    db.add(po)
+    db.flush()
+
+    default_make = "Multi" if active_store in ["divya", "leypart"] else "Mahindra"
+    for r in rows:
+        sub = r["rate"] * r["qty"] * (1 - r.get("discount", 0) / 100)
+        make_val = r.get("make") or r.get("brand") or default_make
+        hsn_code = str(r.get("hsn", "") or "").strip()
+        if not hsn_code and r.get("part_no"):
+            part = str(r.get("part_no")).strip()
+            p_row = db.execute(text("SELECT hsn FROM products WHERE part_no = :p LIMIT 1"), {"p": part}).fetchone()
+            if p_row and p_row.hsn:
+                hsn_code = str(p_row.hsn).strip()
+            else:
+                o_row = db.execute(text("SELECT hsn FROM order_items WHERE part_no = :p LIMIT 1"), {"p": part}).fetchone()
+                if o_row and o_row.hsn:
+                    hsn_code = str(o_row.hsn).strip()
+        if not hsn_code:
+            hsn_code = "87089900"
+
+        db.add(PurchaseOrderItem(
+            po_id=po.id,
+            part_no=r.get("part_no", ""),
+            description=r.get("description", ""),
+            brand=make_val,
+            rate=r["rate"],
+            qty=r["qty"],
+            discount=r.get("discount", 0),
+            amount=round(sub, 2),
+            hsn=hsn_code
+        ))
+
+    db.commit()
+    po_id = po.id
+    db.close()
+    return {"ok": True, "po_no": po_no, "id": po_id}
+
+@app.get("/purchase_orders")
+def list_purchase_orders(request: Request):
+    active_store = get_active_store(request)
+    db = SessionLocal()
+    rows = db.execute(text("""
+        SELECT id, po_no, vendor_name, vendor_address, vendor_gstin, vendor_mobile, vendor_email, date, grand_total
+        FROM purchase_orders WHERE store = :store ORDER BY id DESC LIMIT 50
+    """), {"store": active_store}).fetchall()
+    db.close()
+    return [{"id": r.id, "po_no": r.po_no,
+             "vendor_name": r.vendor_name,
+             "vendor_address": r.vendor_address,
+             "vendor_gstin": r.vendor_gstin,
+             "vendor_mobile": r.vendor_mobile,
+             "vendor_email": r.vendor_email,
+             "date": str(r.date)[:10],
+             "grand_total": float(r.grand_total or 0)} for r in rows]
+
+@app.get("/purchase_order_details/{po_id}")
+def purchase_order_details(po_id: int, request: Request):
+    active_store = get_active_store(request)
+    db = SessionLocal()
+    po = db.query(PurchaseOrder).filter(PurchaseOrder.id == po_id, PurchaseOrder.store == active_store).first()
+    if not po:
+        db.close()
+        return {"error": "Purchase Order not found"}
+    items = db.query(PurchaseOrderItem).filter(PurchaseOrderItem.po_id == po_id).all()
+    db.close()
+    return {
+        "id": po.id,
+        "po_no": po.po_no,
+        "vendor_name": po.vendor_name or "",
+        "vendor_address": po.vendor_address or "",
+        "vendor_gstin": po.vendor_gstin or "",
+        "vendor_mobile": po.vendor_mobile or "",
+        "vendor_email": po.vendor_email or "",
+        "delivery_address": po.delivery_address or "",
+        "payment_terms": po.payment_terms or "",
+        "total_amount": float(po.total_amount or 0.0),
+        "grand_total": float(po.grand_total or 0.0),
+        "items": [{
+            "part_no": it.part_no,
+            "description": it.description,
+            "rate": float(it.rate or 0.0),
+            "qty": int(it.qty or 0),
+            "discount": float(it.discount or 0.0),
+            "amount": float(it.amount or 0.0),
+            "hsn": it.hsn,
+            "brand": it.brand
+        } for it in items]
+    }
+
+@app.post("/update_purchase_order/{po_id}")
+async def update_purchase_order(po_id: int, request: Request):
+    active_store = get_active_store(request)
+    data = await request.json()
+    db = SessionLocal()
+    po = db.query(PurchaseOrder).filter(PurchaseOrder.id == po_id, PurchaseOrder.store == active_store).first()
+    if not po:
+        db.close()
+        return {"error": "Purchase Order not found"}
+
+    rows = data.get("rows", [])
+    if not rows:
+        db.close()
+        return {"error": "No products provided"}
+
+    po.vendor_name = data.get("vendor_name", po.vendor_name)
+    po.vendor_address = data.get("vendor_address", po.vendor_address)
+    po.vendor_gstin = data.get("vendor_gstin", po.vendor_gstin)
+    po.vendor_mobile = data.get("vendor_mobile", po.vendor_mobile)
+    po.vendor_email = data.get("vendor_email", po.vendor_email)
+    po.delivery_address = data.get("delivery_address", po.delivery_address)
+    po.payment_terms = data.get("payment_terms", po.payment_terms)
+
+    db.query(PurchaseOrderItem).filter(PurchaseOrderItem.po_id == po_id).delete()
+
+    total_amount = sum(r["rate"] * r["qty"] * (1 - r.get("discount", 0) / 100) for r in rows)
+    grand_total = total_amount * 1.18
+    po.total_amount = round(total_amount, 2)
+    po.grand_total = round(grand_total, 2)
+
+    default_make = "Multi" if active_store in ["divya", "leypart"] else "Mahindra"
+    for r in rows:
+        sub = r["rate"] * r["qty"] * (1 - r.get("discount", 0) / 100)
+        make_val = r.get("make") or r.get("brand") or default_make
+        db.add(PurchaseOrderItem(
+            po_id=po.id,
+            part_no=r.get("part_no", ""),
+            description=r.get("description", ""),
+            brand=make_val,
+            rate=float(r["rate"]),
+            qty=int(r["qty"]),
+            discount=float(r.get("discount", 0)),
+            amount=round(sub, 2),
+            hsn=r.get("hsn", "")
+        ))
+
+    po_no = po.po_no
+    po_id_val = po.id
+    db.commit()
+    db.close()
+    return {"ok": True, "po_no": po_no, "id": po_id_val}
+
+@app.post("/download_purchase_order_pdf")
+async def download_purchase_order_pdf(request: Request):
+    """Generate Purchase Order PDF HTML — does NOT affect stock or purchases"""
+    data = await request.json()
+    rows = data.get("rows", [])
+    vendor_name = data.get("vendor_name", "")
+    vendor_address = data.get("vendor_address", "")
+    vendor_gstin = data.get("vendor_gstin", "")
+    vendor_mobile = data.get("vendor_mobile", "")
+    vendor_email = data.get("vendor_email", "")
+    delivery_address = data.get("delivery_address", "")
+    payment_terms = data.get("payment_terms", "")
+
+    active_store = get_active_store(request)
+    default_make = "Multi" if active_store in ["divya", "leypart"] else "Mahindra"
+    items, subtotal = [], 0
+    for r in rows:
+        sub = r["rate"] * r["qty"]
+        disc = sub * (r.get("discount", 0) / 100)
+        after = sub - disc
+        make_val = r.get("make") or r.get("brand") or default_make
+        items.append({
+            "part_no": r.get("part_no", ""),
+            "description": r.get("description", ""),
+            "make": make_val,
+            "brand": make_val,
+            "hsn": r.get("hsn", ""),
+            "rate": r["rate"],
+            "qty": r["qty"],
+            "discount": r.get("discount", 0),
+            "taxable": round(after, 2)
+        })
+        subtotal += after
+
+    cgst = round(subtotal * 0.09, 2)
+    sgst = round(subtotal * 0.09, 2)
+    total = round(subtotal + cgst + sgst, 2)
+    date_str = datetime.now().strftime("%d-%b-%Y")
+
+    hsn_summary, hsn_tot_taxable, hsn_tot_cgst, hsn_tot_sgst, hsn_tot_tax = build_hsn_summary(items)
+    tax_words = number_to_words_inr(hsn_tot_tax)
+    grand_words = number_to_words_inr(total)
+
+    env = Environment(loader=FileSystemLoader("templates"))
+    template = env.get_template("purchase_order_pdf.html")
+    seller = get_seller_info(request)
+    html = template.render(
+        po_no="Draft",
+        items=items,
+        subtotal=round(subtotal, 2),
+        cgst=cgst,
+        sgst=sgst,
+        total=total,
+        hsn_summary=hsn_summary,
+        hsn_tot_taxable=hsn_tot_taxable,
+        hsn_tot_cgst=hsn_tot_cgst,
+        hsn_tot_sgst=hsn_tot_sgst,
+        hsn_tot_tax=hsn_tot_tax,
+        tax_words=tax_words,
+        grand_words=grand_words,
+        date=date_str,
+        vendor_name=vendor_name,
+        vendor_address=vendor_address,
+        vendor_gstin=vendor_gstin,
+        vendor_mobile=vendor_mobile,
+        vendor_email=vendor_email,
+        delivery_address=delivery_address,
+        payment_terms=payment_terms,
+        seller=seller
+    )
+    return HTMLResponse(content=html)
+
+@app.get("/view_purchase_order_saved/{po_id}", response_class=HTMLResponse)
+def view_purchase_order_saved(po_id: int, request: Request):
+    db = SessionLocal()
+    po = db.execute(text("""
+        SELECT id, po_no, vendor_name, vendor_address, vendor_gstin, vendor_mobile, vendor_email,
+               delivery_address, payment_terms, date, store
+        FROM purchase_orders WHERE id = :id
+    """), {"id": po_id}).fetchone()
+
+    if not po:
+        db.close()
+        return HTMLResponse("<h1>Purchase Order not found</h1>", status_code=404)
+
+    items_rows = db.execute(text("""
+        SELECT part_no, description, rate, qty, discount, amount, hsn, brand
+        FROM purchase_order_items WHERE po_id = :pid
+    """), {"pid": po_id}).fetchall()
+
+    active_store = getattr(po, 'store', get_active_store(request))
+    default_make = "Multi" if active_store in ["divya", "leypart"] else "Mahindra"
+    items = []
+    subtotal = 0
+    for r in items_rows:
+        sub = r.rate * r.qty
+        disc = sub * ((r.discount or 0) / 100)
+        taxable = sub - disc
+        make_val = getattr(r, 'brand', None) or default_make
+        hsn_code = (r.hsn or "").strip() or "87089900"
+        items.append({
+            "part_no": r.part_no,
+            "description": r.description,
+            "make": make_val,
+            "brand": make_val,
+            "hsn": hsn_code,
+            "rate": r.rate,
+            "qty": r.qty,
+            "discount": r.discount or 0,
+            "taxable": round(taxable, 2)
+        })
+        subtotal += taxable
+
+    db.close()
+    cgst = round(subtotal * 0.09, 2)
+    sgst = round(subtotal * 0.09, 2)
+    total = round(subtotal + cgst + sgst, 2)
+
+    hsn_summary, hsn_tot_taxable, hsn_tot_cgst, hsn_tot_sgst, hsn_tot_tax = build_hsn_summary(items)
+    tax_words = number_to_words_inr(hsn_tot_tax)
+    grand_words = number_to_words_inr(total)
+
+    env = Environment(loader=FileSystemLoader("templates"))
+    template = env.get_template("purchase_order_pdf.html")
+    seller = get_seller_info(request, store_key=getattr(po, 'store', None))
+    html = template.render(
+        po_no=po.po_no,
+        items=items,
+        subtotal=round(subtotal, 2),
+        cgst=cgst,
+        sgst=sgst,
+        total=total,
+        hsn_summary=hsn_summary,
+        hsn_tot_taxable=hsn_tot_taxable,
+        hsn_tot_cgst=hsn_tot_cgst,
+        hsn_tot_sgst=hsn_tot_sgst,
+        hsn_tot_tax=hsn_tot_tax,
+        tax_words=tax_words,
+        grand_words=grand_words,
+        date=safe_format_date(po.date),
+        vendor_name=po.vendor_name,
+        vendor_address=po.vendor_address,
+        vendor_gstin=po.vendor_gstin,
+        vendor_mobile=po.vendor_mobile,
+        vendor_email=po.vendor_email,
+        delivery_address=po.delivery_address,
+        payment_terms=po.payment_terms,
+        seller=seller
+    )
+    return HTMLResponse(content=html)
+
 @app.get("/out_of_stock_products")
 def get_out_of_stock_products(request: Request):
+
     active_store = get_active_store(request)
     db = SessionLocal()
     products = db.query(Product).filter(Product.store == active_store, Product.quantity == 0).all()
