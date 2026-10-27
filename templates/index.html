@@ -3121,80 +3121,104 @@ let poRows = [];
 let editing_po_id = null;
 
 function addPORow(focus = false) {
-    poRows.push({ part_no: '', description: '', rate: 0, qty: 1, discount: 0, hsn: '' });
+    poRows.push({ part_no: '', description: '', rate: 0, qty: 1, discount: 0, hsn: '', brand: '' });
     const newIdx = poRows.length - 1;
     renderPORows(focus ? `po-pno-${newIdx}` : null);
 }
 
-function renderPORows(focusId = null) {
-    const tbody = document.getElementById('po_body');
-    if (!tbody) return;
-    tbody.innerHTML = '';
-    let grandTotal = 0;
-    poRows.forEach((row, i) => {
-        const sub = row.rate * row.qty;
-        const disc = sub * (row.discount / 100);
-        const lineTotal = sub - disc;
-        const lineGst = lineTotal * 1.18;
-        grandTotal += lineGst;
+function renderPORows(focusId) {
+    const activeElId = focusId || (document.activeElement ? document.activeElement.id : null);
+    let html = '', grand = 0;
+    poRows.forEach((r, i) => {
+        const rate = parseFloat(r.rate) || 0;
+        const qty = parseFloat(r.qty) || 1;
+        const discount = parseFloat(r.discount) || 0;
+        const sub = rate * qty;
+        const disc = sub * (discount / 100);
+        const after = sub - disc;
+        const total = after * 1.18;
+        grand += total;
 
-        const tr = document.createElement('tr');
-        tr.innerHTML = `
+        html += `<tr id="po-row-${i}">
             <td style="position:relative;">
-                <input id="po-pno-${i}" class="q-table-input" value="${row.part_no}" placeholder="Part No" autocomplete="off"
-                    oninput="poRows[${i}].part_no=this.value; lookupPOPart(${i});"
-                    onblur="setTimeout(()=>{ const ac=document.getElementById('po-ac-${i}'); if(ac) ac.style.display='none'; },200)">
+                <input id="po-pno-${i}" value="${r.part_no || ''}"
+                    oninput="acSearch(this,document.getElementById('po-ac-${i}'),d=>{poRows[${i}].part_no=d.part_no;poRows[${i}].description=d.description;poRows[${i}].rate=d.rate;poRows[${i}].hsn=d.hsn;poRows[${i}].brand=d.brand||d.make||'';renderPORows('po-qty-${i}');})"
+                    onblur="poRows[${i}].part_no=this.value.trim().toUpperCase();this.value=poRows[${i}].part_no;"
+                    class="q-table-input" placeholder="Part No or search…" style="min-width:170px;" autocomplete="off">
                 <div id="po-ac-${i}" class="ac-list"></div>
             </td>
-            <td><input class="q-table-input" value="${row.description}" placeholder="Description"
-                oninput="poRows[${i}].description=this.value;"></td>
-            <td><input class="q-table-input" type="number" min="0" step="0.01" value="${row.rate}"
-                oninput="poRows[${i}].rate=parseFloat(this.value)||0; renderPORows();" style="width:100px;"></td>
-            <td><input class="qty-input" type="number" min="1" value="${row.qty}"
-                oninput="poRows[${i}].qty=parseInt(this.value)||1; renderPORows();" style="width:70px;"></td>
-            <td><input class="qty-input" type="number" min="0" max="100" step="0.1" value="${row.discount}"
-                oninput="poRows[${i}].discount=parseFloat(this.value)||0; renderPORows();" style="width:70px;"></td>
-            <td><b>₹ ${lineGst.toFixed(2)}</b></td>
+            <td>
+                <input type="text" id="po-desc-${i}" value="${r.description || ''}"
+                    oninput="poRows[${i}].description=this.value"
+                    class="q-table-input" placeholder="Description" style="min-width:180px;">
+                <div style="margin-top:4px;display:flex;align-items:center;gap:4px;">
+                    <span style="font-size:10px;color:var(--text-muted);white-space:nowrap;">HSN:</span>
+                    <input type="text" id="po-hsn-${i}" value="${r.hsn || ''}"
+                        oninput="poRows[${i}].hsn=this.value"
+                        class="q-table-input" style="font-size:11px;padding:2px 6px;height:auto;" placeholder="HSN (optional)">
+                </div>
+            </td>
+            <td>
+                <input type="number" id="po-rate-${i}" value="${r.rate !== undefined && r.rate !== null ? r.rate : ''}" min="0" step="any"
+                    oninput="poRows[${i}].rate=parseFloat(this.value)||0;updatePORowCalc(${i})"
+                    class="q-table-input" style="width:100px;" placeholder="0.00">
+            </td>
+            <td>
+                <input type="number" id="po-qty-${i}" value="${r.qty || 1}" min="1"
+                    oninput="poRows[${i}].qty=parseFloat(this.value)||1;updatePORowCalc(${i})"
+                    class="q-table-input" style="width:70px;">
+            </td>
+            <td>
+                <input type="number" id="po-disc-${i}" value="${r.discount !== undefined ? r.discount : 0}" min="0" max="100"
+                    oninput="poRows[${i}].discount=parseFloat(this.value)||0;updatePORowCalc(${i})"
+                    class="q-table-input" style="width:65px;">
+            </td>
+            <td id="po-tot-${i}" style="font-weight:700;color:#7c3aed;white-space:nowrap;">₹ ${total.toFixed(2)}</td>
             <td><button onclick="removePORow(${i})" class="btn btn-danger btn-sm" style="padding:3px 8px;">✕</button></td>
-        `;
-        tbody.appendChild(tr);
+        </tr>`;
+    });
+
+    const tbody = document.getElementById('po_body');
+    if (!tbody) return;
+    tbody.innerHTML = html;
+
+    const gtEl = document.getElementById('po_grand_total');
+    if (gtEl) gtEl.textContent = grand.toFixed(2);
+
+    if (activeElId) {
+        const el = document.getElementById(activeElId);
+        if (el) { el.focus(); try { el.setSelectionRange(el.value.length, el.value.length); } catch(e){} }
+    }
+}
+
+function updatePORowCalc(i) {
+    const r = poRows[i];
+    const rate = parseFloat(r.rate) || 0;
+    const qty = parseFloat(r.qty) || 1;
+    const discount = parseFloat(r.discount) || 0;
+    const sub = rate * qty;
+    const disc = sub * (discount / 100);
+    const after = sub - disc;
+    const total = after * 1.18;
+
+    const totEl = document.getElementById(`po-tot-${i}`);
+    if (totEl) totEl.textContent = `₹ ${total.toFixed(2)}`;
+
+    // Recalculate grand total
+    let grand = 0;
+    poRows.forEach((row, j) => {
+        const r2 = parseFloat(row.rate) || 0;
+        const q2 = parseFloat(row.qty) || 1;
+        const d2 = parseFloat(row.discount) || 0;
+        grand += (r2 * q2 * (1 - d2/100)) * 1.18;
     });
     const gtEl = document.getElementById('po_grand_total');
-    if (gtEl) gtEl.textContent = grandTotal.toFixed(2);
-    if (focusId) {
-        const el = document.getElementById(focusId);
-        if (el) el.focus();
-    }
+    if (gtEl) gtEl.textContent = grand.toFixed(2);
 }
 
 function removePORow(i) {
     poRows.splice(i, 1);
     renderPORows();
-}
-
-async function lookupPOPart(i) {
-    const pno = poRows[i].part_no.trim();
-    const ac = document.getElementById(`po-ac-${i}`);
-    if (!ac) return;
-    if (pno.length < 2) { ac.style.display = 'none'; return; }
-    const res = await fetch(`/autocomplete_part?q=${encodeURIComponent(pno)}`);
-    const data = await res.json();
-    if (!data.length) { ac.style.display = 'none'; return; }
-    ac.innerHTML = data.map(p => `
-        <div class="ac-item" onmousedown="selectPOPart(${i}, '${p.part_no.replace(/'/g,"\\'")}', '${(p.description||'').replace(/'/g,"\\'")}', ${p.rate||0}, '${p.hsn||''}')">
-            <b>${p.part_no}</b> — ${p.description || ''} &nbsp; <span style="color:var(--success);">₹${p.rate||0}</span>
-        </div>`).join('');
-    ac.style.display = 'block';
-}
-
-function selectPOPart(i, pno, desc, rate, hsn) {
-    poRows[i].part_no = pno;
-    poRows[i].description = desc;
-    poRows[i].rate = rate;
-    poRows[i].hsn = hsn;
-    renderPORows();
-    const ac = document.getElementById(`po-ac-${i}`);
-    if (ac) ac.style.display = 'none';
 }
 
 async function downloadPurchaseOrderPDF() {
@@ -3264,7 +3288,8 @@ async function editPurchaseOrder(po_id) {
         rate: it.rate,
         qty: it.qty,
         discount: it.discount,
-        hsn: it.hsn
+        hsn: it.hsn,
+        brand: it.brand || ''
     }));
     renderPORows();
     editing_po_id = po_id;
@@ -3322,9 +3347,8 @@ async function loadPurchaseOrderList() {
 
 addPORow();
 loadPurchaseOrderList();
-
-
 // ══════════════════════════════════════════
+
 let invRows = [];
 
 function addInvRow(focus = false){
