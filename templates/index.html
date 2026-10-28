@@ -3521,7 +3521,7 @@ async function loadInvoiceList(){
             <td>₹ ${inv.gst_amount.toLocaleString('en-IN',{minimumFractionDigits:2})}</td>
             <td style="font-weight:700;color:var(--danger);">₹ ${inv.grand_total.toLocaleString('en-IN',{minimumFractionDigits:2})}</td>
             <td style="text-align:center;">
-                <a href="/view_invoice/${inv.id}" target="_blank" class="btn btn-ghost btn-sm" style="padding:2px 8px;font-size:11px;color:var(--primary);text-decoration:none;">📄 View PDF</a>
+                <a href="/view_invoice_saved/${inv.id}" target="_blank" class="btn btn-ghost btn-sm" style="padding:2px 8px;font-size:11px;color:var(--primary);text-decoration:none;">📄 View PDF</a>
                 <button onclick="editInvoice(${inv.id})" class="btn btn-ghost btn-sm" style="padding:2px 8px;font-size:11px;color:#d97706;border:none;background:none;cursor:pointer;font-weight:600;">✏️ Edit & Correct</button>
             </td>
         </tr>`).join('')}</tbody>
@@ -3595,7 +3595,7 @@ async function raiseInvoice(){
         alert(`✅ Tax Invoice ${updateData.invoice_no} corrected & stock updated successfully!`);
         cancelInvoiceEdit();
         loadInvoiceList();
-        const pdfRes = await fetch(`/view_invoice/${updateData.id}`);
+        const pdfRes = await fetch(`/view_invoice_saved/${updateData.id}`);
         const html = await pdfRes.text();
         const w = window.open('','_blank'); w.document.open(); w.document.write(html); w.document.close();
     } else {
