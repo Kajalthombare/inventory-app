@@ -1,4 +1,3 @@
-# Database setup - SQLite (persistent via Railway volume)
 import os
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, declarative_base
@@ -11,12 +10,20 @@ if os.path.exists(".env"):
                 key, val = line.strip().split("=", 1)
                 os.environ[key.strip()] = val.strip()
 
-# Use SQLite — stored at /data/inventory.db on Railway (persistent volume)
-# Falls back to local inventory.db for development
-DATABASE_URL = os.environ.get("DATABASE_URL", "sqlite:////data/inventory.db")
+# DATABASE_URL set by Railway (PostgreSQL) or falls back to local SQLite
+DATABASE_URL = os.environ.get("DATABASE_URL", "sqlite:///inventory.db")
 
-# SQLite needs check_same_thread=False for FastAPI
-engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
+# Fix postgres:// → postgresql+psycopg2:// for SQLAlchemy
+if DATABASE_URL.startswith("postgres://"):
+    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql+psycopg2://", 1)
+elif DATABASE_URL.startswith("postgresql://") and not DATABASE_URL.startswith("postgresql+"):
+    DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+psycopg2://", 1)
+
+# SQLite needs check_same_thread=False; PostgreSQL does NOT
+if DATABASE_URL.startswith("sqlite"):
+    engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
+else:
+    engine = create_engine(DATABASE_URL, pool_pre_ping=True)
 
 SessionLocal = sessionmaker(bind=engine)
 Base = declarative_base()
