@@ -9,7 +9,7 @@ import pandas as pd
 import io
 from datetime import datetime
 from fastapi.responses import FileResponse
-import pdfkit
+
 from openpyxl import Workbook
 from openpyxl.styles import Font, Alignment, Border, Side, PatternFill
 
