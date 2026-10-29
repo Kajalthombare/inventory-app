@@ -8,21 +8,26 @@ ENV PYTHONUNBUFFERED=1 \
 # Set working directory
 WORKDIR /app
 
-# Install system dependencies needed for compiling tools or other operations
+# Install system dependencies including wkhtmltopdf for PDF generation
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     libpq-dev \
+    wkhtmltopdf \
+    xvfb \
+    libxrender1 \
+    libfontconfig1 \
+    libx11-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy requirements and install
+# Copy requirements and install Python packages
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy the rest of the application code
 COPY . .
 
-# Expose port 8000
+# Expose default port
 EXPOSE 8000
 
-# Command to run the application
+# Start the app — Python reads PORT from environment directly
 CMD ["python", "main.py"]
