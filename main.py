@@ -35,7 +35,7 @@ app.add_middleware(SessionMiddleware, secret_key="inventory-secret-key-2026")
 
 # ── Hardcoded credentials ──
 ADMIN_USERNAME = "admin"
-ADMIN_PASSWORD = "admin123"
+ADMIN_PASSWORD = "admin@123"
 
 # ── Stores configuration ──
 STORES = {
