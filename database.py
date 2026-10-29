@@ -1,4 +1,4 @@
-# Database setup for Railway PostgreSQL and local SQLite fallback
+# Database setup - SQLite (persistent via Railway volume)
 import os
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, declarative_base
@@ -11,29 +11,12 @@ if os.path.exists(".env"):
                 key, val = line.strip().split("=", 1)
                 os.environ[key.strip()] = val.strip()
 
-# Read DATABASE_URL from environment
-# Railway sets MYSQL_URL for MySQL services, so check both
-DATABASE_URL = (
-    os.environ.get("DATABASE_URL") or
-    os.environ.get("MYSQL_URL") or
-    "sqlite:///inventory.db"
-)
+# Use SQLite — stored at /data/inventory.db on Railway (persistent volume)
+# Falls back to local inventory.db for development
+DATABASE_URL = os.environ.get("DATABASE_URL", "sqlite:////data/inventory.db")
 
-# Railway / Render gives postgres:// — SQLAlchemy needs postgresql+psycopg2://
-if DATABASE_URL.startswith("postgres://"):
-    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql+psycopg2://", 1)
-elif DATABASE_URL.startswith("postgresql://") and not DATABASE_URL.startswith("postgresql+"):
-    DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+psycopg2://", 1)
-
-# MySQL URL fix for SQLAlchemy (mysql:// → mysql+pymysql://)
-if DATABASE_URL.startswith("mysql://"):
-    DATABASE_URL = DATABASE_URL.replace("mysql://", "mysql+pymysql://", 1)
-
-# PostgreSQL doesn't need check_same_thread
-if DATABASE_URL.startswith("sqlite"):
-    engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
-else:
-    engine = create_engine(DATABASE_URL, pool_pre_ping=True)
+# SQLite needs check_same_thread=False for FastAPI
+engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
 
 SessionLocal = sessionmaker(bind=engine)
 Base = declarative_base()

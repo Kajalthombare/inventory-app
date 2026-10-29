@@ -10,6 +10,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libpq-dev \
     && rm -rf /var/lib/apt/lists/*
 
+# Create persistent data directory for SQLite
+RUN mkdir -p /data
+
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
