@@ -194,6 +194,207 @@ def switch_store(store_name: str, request: Request):
         return RedirectResponse("/", status_code=302)
     return RedirectResponse("/select_store", status_code=302)
 
+
+def restore_history_from_seed(db, force=False):
+    """Auto-restore historical invoices, quotations, items & vendors if invoices table is empty."""
+    try:
+        inv_count = db.execute(text("SELECT COUNT(*) FROM invoices")).scalar() or 0
+        if not force and inv_count > 0:
+            print(f"ℹ Invoices table already has {inv_count} records — skipping history seed")
+            return {"status": "skipped", "message": f"Already has {inv_count} invoices", "count": inv_count}
+        
+        seed_path = os.path.join(os.path.dirname(__file__), "seed_history.json")
+        sqlite_path = os.path.join(os.path.dirname(__file__), "inventory.db")
+        data = None
+        
+        if os.path.exists(seed_path):
+            import json
+            with open(seed_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            print(f"📖 Loaded history seed data from {seed_path}")
+        elif os.path.exists(sqlite_path):
+            import sqlite3
+            sconn = sqlite3.connect(sqlite_path)
+            sconn.row_factory = sqlite3.Row
+            sc = sconn.cursor()
+            data = {}
+            for tbl in ["invoices", "invoice_items", "quotations", "quotation_items", "vendors", "purchases"]:
+                try:
+                    data[tbl] = [dict(r) for r in sc.execute(f"SELECT * FROM {tbl}").fetchall()]
+                except Exception:
+                    data[tbl] = []
+            sconn.close()
+            print(f"📖 Loaded history data directly from {sqlite_path}")
+
+        if not data:
+            print("⚠ No seed_history.json or inventory.db found to restore history")
+            return {"status": "warning", "message": "No seed data found"}
+
+        # 1. Restore Vendors
+        vendors = data.get("vendors", [])
+        for v in vendors:
+            v_name = (v.get("name") or "").strip()
+            if not v_name:
+                continue
+            exists = db.execute(text("SELECT id FROM vendors WHERE name = :n AND (store = :s OR store IS NULL)"), {
+                "n": v_name, "s": v.get("store") or "mahindra"
+            }).fetchone()
+            if not exists:
+                db.execute(text("""
+                    INSERT INTO vendors (name, address, mobile_num, gstin, email_id, store)
+                    VALUES (:n, :a, :m, :g, :e, :s)
+                """), {
+                    "n": v_name,
+                    "a": v.get("address") or "",
+                    "m": v.get("mobile_num") or "",
+                    "g": v.get("gstin") or "",
+                    "e": v.get("email_id") or "",
+                    "s": (v.get("store") or "mahindra").lower()
+                })
+
+        # 2. Restore Invoices & Invoice Items
+        invoices = data.get("invoices", [])
+        inv_items = data.get("invoice_items", [])
+        for inv in invoices:
+            inv_no = (inv.get("invoice_no") or "").strip()
+            if not inv_no:
+                continue
+            exists = db.execute(text("SELECT id FROM invoices WHERE invoice_no = :inv"), {"inv": inv_no}).fetchone()
+            if not exists:
+                inv_dt = inv.get("date")
+                if isinstance(inv_dt, str):
+                    try:
+                        inv_dt = datetime.fromisoformat(inv_dt.split(".")[0])
+                    except Exception:
+                        inv_dt = datetime.now()
+                elif not inv_dt:
+                    inv_dt = datetime.now()
+
+                db.execute(text("""
+                    INSERT INTO invoices (id, invoice_no, customer_name, customer_address, customer_gstin, customer_mobile, customer_email, date, total_amount, gst_amount, grand_total, store)
+                    VALUES (:id, :inv, :cust, :addr, :gst, :mob, :email, :dt, :tot, :gst_amt, :grand, :store)
+                """), {
+                    "id": inv.get("id"),
+                    "inv": inv_no,
+                    "cust": inv.get("customer_name") or "",
+                    "addr": inv.get("customer_address") or "",
+                    "gst": inv.get("customer_gstin") or "",
+                    "mob": inv.get("customer_mobile") or "",
+                    "email": inv.get("customer_email") or "",
+                    "dt": inv_dt,
+                    "tot": float(inv.get("total_amount") or 0.0),
+                    "gst_amt": float(inv.get("gst_amount") or 0.0),
+                    "grand": float(inv.get("grand_total") or 0.0),
+                    "store": (inv.get("store") or "mahindra").lower()
+                })
+
+        for it in inv_items:
+            iid = it.get("invoice_id")
+            it_id = it.get("id")
+            exists = db.execute(text("SELECT id FROM invoice_items WHERE invoice_id = :iid AND part_no = :pn"), {
+                "iid": iid, "pn": it.get("part_no")
+            }).fetchone()
+            if not exists:
+                db.execute(text("""
+                    INSERT INTO invoice_items (id, invoice_id, part_no, description, quantity, rate, amount, hsn, purchase_rate, brand)
+                    VALUES (:id, :iid, :pn, :desc, :qty, :rate, :amt, :hsn, :prate, :brand)
+                """), {
+                    "id": it_id,
+                    "iid": iid,
+                    "pn": it.get("part_no") or "",
+                    "desc": it.get("description") or "",
+                    "qty": int(it.get("quantity") or 1),
+                    "rate": float(it.get("rate") or 0.0),
+                    "amt": float(it.get("amount") or 0.0),
+                    "hsn": it.get("hsn") or "87089900",
+                    "prate": float(it.get("purchase_rate") or 0.0),
+                    "brand": it.get("brand") or "Mahindra"
+                })
+
+        # 3. Restore Quotations & Quotation Items
+        quotations = data.get("quotations", [])
+        q_items = data.get("quotation_items", [])
+        for q in quotations:
+            q_no = (q.get("quotation_no") or "").strip()
+            if not q_no:
+                continue
+            exists = db.execute(text("SELECT id FROM quotations WHERE quotation_no = :qno"), {"qno": q_no}).fetchone()
+            if not exists:
+                q_dt = q.get("date")
+                if isinstance(q_dt, str):
+                    try:
+                        q_dt = datetime.fromisoformat(q_dt.split(".")[0])
+                    except Exception:
+                        q_dt = datetime.now()
+                elif not q_dt:
+                    q_dt = datetime.now()
+
+                db.execute(text("""
+                    INSERT INTO quotations (id, quotation_no, customer_name, customer_address, customer_gstin, customer_mobile, customer_email, date, total_amount, grand_total, store)
+                    VALUES (:id, :qno, :cust, :addr, :gst, :mob, :email, :dt, :tot, :grand, :store)
+                """), {
+                    "id": q.get("id"),
+                    "qno": q_no,
+                    "cust": q.get("customer_name") or "",
+                    "addr": q.get("customer_address") or "",
+                    "gst": q.get("customer_gstin") or "",
+                    "mob": q.get("customer_mobile") or "",
+                    "email": q.get("customer_email") or "",
+                    "dt": q_dt,
+                    "tot": float(q.get("total_amount") or 0.0),
+                    "grand": float(q.get("grand_total") or 0.0),
+                    "store": (q.get("store") or "mahindra").lower()
+                })
+
+        for qit in q_items:
+            qid = qit.get("quotation_id")
+            qit_id = qit.get("id")
+            exists = db.execute(text("SELECT id FROM quotation_items WHERE quotation_id = :qid AND part_no = :pn"), {
+                "qid": qid, "pn": qit.get("part_no")
+            }).fetchone()
+            if not exists:
+                db.execute(text("""
+                    INSERT INTO quotation_items (id, quotation_id, part_no, description, rate, qty, discount, amount, hsn, brand)
+                    VALUES (:id, :qid, :pn, :desc, :rate, :qty, :disc, :amt, :hsn, :brand)
+                """), {
+                    "id": qit_id,
+                    "qid": qid,
+                    "pn": qit.get("part_no") or "",
+                    "desc": qit.get("description") or "",
+                    "rate": float(qit.get("rate") or 0.0),
+                    "qty": int(qit.get("qty") or 1),
+                    "disc": float(qit.get("discount") or 0.0),
+                    "amt": float(qit.get("amount") or 0.0),
+                    "hsn": qit.get("hsn") or "87089900",
+                    "brand": qit.get("brand") or "Mahindra"
+                })
+
+        db.commit()
+
+        # 4. Synchronize PostgreSQL autoincrement sequences (if running on PostgreSQL)
+        from database import engine as _eng
+        if "postgresql" in str(_eng.url):
+            for tbl in ["invoices", "invoice_items", "quotations", "quotation_items", "vendors", "purchases"]:
+                try:
+                    db.execute(text(f"""
+                        SELECT setval(pg_get_serial_sequence('{tbl}', 'id'), COALESCE((SELECT MAX(id) FROM {tbl}), 1));
+                    """))
+                    db.commit()
+                except Exception:
+                    db.rollback()
+
+        restored_count = db.execute(text("SELECT COUNT(*) FROM invoices")).scalar() or 0
+        msg = f"✅ Auto-restored history: {restored_count} invoices, {len(quotations)} quotations in database"
+        print(msg)
+        return {"status": "success", "message": msg, "count": restored_count}
+
+    except Exception as e:
+        db.rollback()
+        print(f"⚠ History restore error: {e}")
+        import traceback; traceback.print_exc()
+        return {"status": "error", "message": str(e)}
+
+
 # ── Auto-import inventory.xlsx on startup if products table is empty ──
 @app.on_event("startup")
 def auto_import_inventory():
@@ -235,7 +436,7 @@ def auto_import_inventory():
             except Exception:
                 db.rollback()
             try:
-                db.execute(text(f"UPDATE {tbl} SET store = 'mahindra' WHERE store IS NULL OR store = ''"))
+                db.execute(text(f"UPDATE {tbl} SET store = 'mahindra' WHERE store IS NULL OR store = '' OR store = 'Mahindra'"))
                 db.commit()
             except Exception:
                 db.rollback()
@@ -328,7 +529,13 @@ def auto_import_inventory():
                 db.commit()
                 print(f"✅ Auto-imported inventory.xlsx ({len(df)} products)")
 
-        # ── 2. Sync order*.csv / orders*.csv → order_items table in background thread ──
+        # ── 2. Auto-restore invoices, quotations & vendors from seed backup if empty ──
+        try:
+            restore_history_from_seed(db)
+        except Exception as ex:
+            print(f"⚠ History restore error: {ex}")
+
+        # ── 3. Sync order*.csv / orders*.csv → order_items table in background thread ──
         import threading
         def _bg_sync():
             bg_db = SessionLocal()
@@ -821,14 +1028,17 @@ def export_excel(
     customer: str = Query(""),
     vendor: str = Query("")
 ):
-    active_store = get_active_store(request)
+    active_store = get_active_store(request).lower()
     db = SessionLocal()
+
+    store_condition = "(LOWER(i.store) = :store OR i.store IS NULL OR i.store = '')" if active_store == "mahindra" else "LOWER(i.store) = :store"
+    prod_store_condition = "(LOWER(p.store) = :store OR p.store IS NULL OR p.store = '')" if active_store == "mahindra" else "LOWER(p.store) = :store"
 
     sql_parts = [
         "FROM invoice_items ii",
         "JOIN invoices i ON ii.invoice_id = i.id",
-        "LEFT JOIN products p ON (ii.part_no = p.part_no AND p.store = :store)",
-        "WHERE i.store = :store AND CAST(i.date AS DATE) BETWEEN :start AND :end"
+        f"LEFT JOIN products p ON (ii.part_no = p.part_no AND {prod_store_condition})",
+        f"WHERE {store_condition} AND CAST(i.date AS DATE) BETWEEN :start AND :end"
     ]
     
     params = {
@@ -2298,27 +2508,31 @@ async def save_quotation(request: Request):
 
 @app.get("/quotations")
 def list_quotations(request: Request):
-    active_store = get_active_store(request)
+    active_store = get_active_store(request).lower()
     db = SessionLocal()
-    rows = db.execute(text("""
+    store_condition = "(LOWER(store) = :store OR store IS NULL OR store = '')" if active_store == "mahindra" else "LOWER(store) = :store"
+    rows = db.execute(text(f"""
         SELECT id, quotation_no, customer_name, customer_address, customer_gstin, customer_mobile, customer_email, date, grand_total
-        FROM quotations WHERE store = :store ORDER BY id DESC LIMIT 50
+        FROM quotations WHERE {store_condition} ORDER BY date DESC NULLS LAST, id DESC LIMIT 50
     """), {"store": active_store}).fetchall()
     db.close()
-    return [{"id": r.id, "quotation_no": r.quotation_no,
-             "customer_name": r.customer_name,
-             "customer_address": r.customer_address,
-             "customer_gstin": r.customer_gstin,
-             "customer_mobile": r.customer_mobile,
-             "customer_email": r.customer_email,
-             "date": str(r.date)[:10],
+    return [{"id": r.id, "quotation_no": r.quotation_no or "",
+             "customer_name": r.customer_name or "",
+             "customer_address": r.customer_address or "",
+             "customer_gstin": r.customer_gstin or "",
+             "customer_mobile": r.customer_mobile or "",
+             "customer_email": r.customer_email or "",
+             "date": safe_format_datetime(r.date)[:10],
              "grand_total": float(r.grand_total or 0)} for r in rows]
 
 @app.get("/quotation_details/{q_id}")
 def quotation_details(q_id: int, request: Request):
-    active_store = get_active_store(request)
+    active_store = get_active_store(request).lower()
     db = SessionLocal()
-    quot = db.query(Quotation).filter(Quotation.id == q_id, Quotation.store == active_store).first()
+    if active_store == "mahindra":
+        quot = db.query(Quotation).filter(Quotation.id == q_id, (Quotation.store == "mahindra") | (Quotation.store == None) | (Quotation.store == "")).first()
+    else:
+        quot = db.query(Quotation).filter(Quotation.id == q_id, Quotation.store == active_store).first()
     if not quot:
         db.close()
         return {"error": "Quotation not found"}
@@ -2399,26 +2613,39 @@ async def update_quotation(q_id: int, request: Request):
 
 @app.get("/invoices_list")
 def list_invoices(request: Request, q: str = ""):
-    active_store = get_active_store(request)
+    active_store = get_active_store(request).lower()
     db = SessionLocal()
-    q_clean = f"%{q.strip().upper()}%"
-    sql = """
-        SELECT id, invoice_no, customer_name, customer_address, customer_gstin, customer_mobile, customer_email, date, total_amount, gst_amount, grand_total
-        FROM invoices
-        WHERE store = :store AND (UPPER(invoice_no) LIKE :q OR UPPER(customer_name) LIKE :q)
-        ORDER BY date DESC
-        LIMIT 50
-    """
-    rows = db.execute(text(sql), {"store": active_store, "q": q_clean}).fetchall()
+    q_str = q.strip()
+    store_condition = "(LOWER(store) = :store OR store IS NULL OR store = '')" if active_store == "mahindra" else "LOWER(store) = :store"
+
+    if q_str:
+        sql = f"""
+            SELECT id, invoice_no, customer_name, customer_address, customer_gstin, customer_mobile, customer_email, date, total_amount, gst_amount, grand_total
+            FROM invoices
+            WHERE {store_condition}
+              AND (COALESCE(UPPER(invoice_no), '') LIKE :q OR COALESCE(UPPER(customer_name), '') LIKE :q)
+            ORDER BY date DESC NULLS LAST, id DESC
+            LIMIT 50
+        """
+        rows = db.execute(text(sql), {"store": active_store, "q": f"%{q_str.upper()}%"}).fetchall()
+    else:
+        sql = f"""
+            SELECT id, invoice_no, customer_name, customer_address, customer_gstin, customer_mobile, customer_email, date, total_amount, gst_amount, grand_total
+            FROM invoices
+            WHERE {store_condition}
+            ORDER BY date DESC NULLS LAST, id DESC
+            LIMIT 50
+        """
+        rows = db.execute(text(sql), {"store": active_store}).fetchall()
     db.close()
     return [{
         "id": r.id,
-        "invoice_no": r.invoice_no,
-        "customer_name": r.customer_name,
-        "customer_address": r.customer_address,
-        "customer_gstin": r.customer_gstin,
-        "customer_mobile": r.customer_mobile,
-        "customer_email": r.customer_email,
+        "invoice_no": r.invoice_no or "",
+        "customer_name": r.customer_name or "",
+        "customer_address": r.customer_address or "",
+        "customer_gstin": r.customer_gstin or "",
+        "customer_mobile": r.customer_mobile or "",
+        "customer_email": r.customer_email or "",
         "date": safe_format_datetime(r.date),
         "total_amount": float(r.total_amount or 0.0),
         "gst_amount": float(r.gst_amount or 0.0),
@@ -2427,9 +2654,12 @@ def list_invoices(request: Request, q: str = ""):
 
 @app.get("/invoice_details/{inv_id}")
 def invoice_details(inv_id: int, request: Request):
-    active_store = get_active_store(request)
+    active_store = get_active_store(request).lower()
     db = SessionLocal()
-    inv = db.query(Invoice).filter(Invoice.id == inv_id, Invoice.store == active_store).first()
+    if active_store == "mahindra":
+        inv = db.query(Invoice).filter(Invoice.id == inv_id, (Invoice.store == "mahindra") | (Invoice.store == None) | (Invoice.store == "")).first()
+    else:
+        inv = db.query(Invoice).filter(Invoice.id == inv_id, Invoice.store == active_store).first()
     if not inv:
         db.close()
         return {"error": "Invoice not found"}
@@ -3622,27 +3852,31 @@ async def save_purchase_order(request: Request):
 
 @app.get("/purchase_orders")
 def list_purchase_orders(request: Request):
-    active_store = get_active_store(request)
+    active_store = get_active_store(request).lower()
     db = SessionLocal()
-    rows = db.execute(text("""
+    store_condition = "(LOWER(store) = :store OR store IS NULL OR store = '')" if active_store == "mahindra" else "LOWER(store) = :store"
+    rows = db.execute(text(f"""
         SELECT id, po_no, vendor_name, vendor_address, vendor_gstin, vendor_mobile, vendor_email, date, grand_total
-        FROM purchase_orders WHERE store = :store ORDER BY id DESC LIMIT 50
+        FROM purchase_orders WHERE {store_condition} ORDER BY date DESC NULLS LAST, id DESC LIMIT 50
     """), {"store": active_store}).fetchall()
     db.close()
-    return [{"id": r.id, "po_no": r.po_no,
-             "vendor_name": r.vendor_name,
-             "vendor_address": r.vendor_address,
-             "vendor_gstin": r.vendor_gstin,
-             "vendor_mobile": r.vendor_mobile,
-             "vendor_email": r.vendor_email,
-             "date": str(r.date)[:10],
+    return [{"id": r.id, "po_no": r.po_no or "",
+             "vendor_name": r.vendor_name or "",
+             "vendor_address": r.vendor_address or "",
+             "vendor_gstin": r.vendor_gstin or "",
+             "vendor_mobile": r.vendor_mobile or "",
+             "vendor_email": r.vendor_email or "",
+             "date": safe_format_datetime(r.date)[:10],
              "grand_total": float(r.grand_total or 0)} for r in rows]
 
 @app.get("/purchase_order_details/{po_id}")
 def purchase_order_details(po_id: int, request: Request):
-    active_store = get_active_store(request)
+    active_store = get_active_store(request).lower()
     db = SessionLocal()
-    po = db.query(PurchaseOrder).filter(PurchaseOrder.id == po_id, PurchaseOrder.store == active_store).first()
+    if active_store == "mahindra":
+        po = db.query(PurchaseOrder).filter(PurchaseOrder.id == po_id, (PurchaseOrder.store == "mahindra") | (PurchaseOrder.store == None) | (PurchaseOrder.store == "")).first()
+    else:
+        po = db.query(PurchaseOrder).filter(PurchaseOrder.id == po_id, PurchaseOrder.store == active_store).first()
     if not po:
         db.close()
         return {"error": "Purchase Order not found"}
@@ -4071,7 +4305,6 @@ async def download_order_book_excel(request: Request):
 def generate_invoice_no(db):
     import calendar
     today = datetime.now()
-
     year_month = today.strftime("%Y-%m")   # 2026-06
 
     # Python-side date range — works with both SQLite and PostgreSQL
@@ -4083,10 +4316,15 @@ def generate_invoice_no(db):
         SELECT COUNT(*) 
         FROM invoices 
         WHERE date >= :from_date AND date <= :to_date
-    """), {"from_date": first_day, "to_date": last_day}).scalar()
+    """), {"from_date": first_day, "to_date": last_day}).scalar() or 0
 
-    serial = str(count + 1).zfill(3)   # 001, 002, 003
-    return f"{year_month}-{serial}"
+    next_num = count + 1
+    candidate = f"{year_month}-{str(next_num).zfill(3)}"
+    # Guarantee uniqueness to prevent PostgreSQL UniqueConstraint crash
+    while db.execute(text("SELECT COUNT(*) FROM invoices WHERE invoice_no = :inv"), {"inv": candidate}).scalar() > 0:
+        next_num += 1
+        candidate = f"{year_month}-{str(next_num).zfill(3)}"
+    return candidate
 @app.post("/download_pdf")
 async def download_pdf(request: Request):
 
@@ -4243,7 +4481,7 @@ async def download_pdf(request: Request):
                 "inv": invoice_no, "cust": customer_name,
                 "address": customer_address, "gstin": customer_gstin,
                 "mobile": customer_mobile, "email": customer_email,
-                "date": datetime.utcnow(),
+                "date": datetime.now(),
                 "total": round(subtotal, 2),
                 "gst": cgst + sgst, "grand": total,
                 "store": active_store
@@ -4262,7 +4500,7 @@ async def download_pdf(request: Request):
                 "inv": invoice_no, "cust": customer_name,
                 "address": customer_address, "gstin": customer_gstin,
                 "mobile": customer_mobile, "email": customer_email,
-                "date": datetime.utcnow(),
+                "date": datetime.now(),
                 "total": round(subtotal, 2),
                 "gst": cgst + sgst, "grand": total,
                 "store": active_store
@@ -4348,14 +4586,17 @@ def sales_summary(
     customer: str = Query(""),
     vendor: str = Query("")
 ):
-    active_store = get_active_store(request)
+    active_store = get_active_store(request).lower()
     db = SessionLocal()
+
+    store_condition = "(LOWER(i.store) = :store OR i.store IS NULL OR i.store = '')" if active_store == "mahindra" else "LOWER(i.store) = :store"
+    prod_store_condition = "(LOWER(p.store) = :store OR p.store IS NULL OR p.store = '')" if active_store == "mahindra" else "LOWER(p.store) = :store"
 
     sql_parts = [
         "FROM invoice_items ii",
         "JOIN invoices i ON ii.invoice_id = i.id",
-        "LEFT JOIN products p ON (ii.part_no = p.part_no AND p.store = :store)",
-        "WHERE i.store = :store AND CAST(i.date AS DATE) BETWEEN :start AND :end"
+        f"LEFT JOIN products p ON (ii.part_no = p.part_no AND {prod_store_condition})",
+        f"WHERE {store_condition} AND CAST(i.date AS DATE) BETWEEN :start AND :end"
     ]
     
     params = {
@@ -4455,22 +4696,23 @@ def purchase_summary(
     end_date: str = Query(...),
     vendor: str = Query("")
 ):
-    active_store = get_active_store(request)
+    active_store = get_active_store(request).lower()
     db = SessionLocal()
+    store_condition = "(LOWER(store) = :store OR store IS NULL OR store = '')" if active_store == "mahindra" else "LOWER(store) = :store"
     
-    summary_query = """
+    summary_query = f"""
         SELECT 
             COUNT(*) as total_purchases,
             SUM(amount) as total_amount
         FROM purchases
-        WHERE store = :store AND CAST(date AS DATE) BETWEEN :start AND :end
+        WHERE {store_condition} AND CAST(date AS DATE) BETWEEN :start AND :end
     """
     
-    items_query = """
+    items_query = f"""
         SELECT 
             id, vendor_name, vendor_invoice_no, vendor_invoice_date, part_no, description, hsn, quantity, rate, discount, amount, date
         FROM purchases
-        WHERE store = :store AND CAST(date AS DATE) BETWEEN :start AND :end
+        WHERE {store_condition} AND CAST(date AS DATE) BETWEEN :start AND :end
     """
     
     params = {
@@ -4517,14 +4759,15 @@ def export_purchase_excel(
     end_date: str = Query(...),
     vendor: str = Query("")
 ):
-    active_store = get_active_store(request)
+    active_store = get_active_store(request).lower()
     db = SessionLocal()
+    store_condition = "(LOWER(store) = :store OR store IS NULL OR store = '')" if active_store == "mahindra" else "LOWER(store) = :store"
     
-    items_query = """
+    items_query = f"""
         SELECT 
             date, vendor_name, vendor_invoice_no, vendor_invoice_date, part_no, description, hsn, quantity, rate, discount, amount
         FROM purchases
-        WHERE store = :store AND CAST(date AS DATE) BETWEEN :start AND :end
+        WHERE {store_condition} AND CAST(date AS DATE) BETWEEN :start AND :end
     """
     
     params = {
@@ -4611,20 +4854,27 @@ def get_sales(start: str, end: str):
     rows = db.execute(text("""
         SELECT * FROM invoices
         WHERE CAST(date AS DATE) BETWEEN :s AND :e
-        ORDER BY date DESC
+        ORDER BY date DESC NULLS LAST, id DESC
     """), {
         "s": start,
         "e": end
     }).fetchall()
 
-    total_sales = sum([r.total for r in rows])
+    total_sales = sum([float(r.grand_total or r.total_amount or 0.0) for r in rows])
 
     db.close()
 
+    data_list = []
+    for r in rows:
+        d = dict(r._mapping)
+        if d.get("date"):
+            d["date"] = safe_format_datetime(d["date"])
+        data_list.append(d)
+
     return {
-        "total_sales": total_sales,
+        "total_sales": round(total_sales, 2),
         "count": len(rows),
-        "data": [dict(r._mapping) for r in rows]
+        "data": data_list
     }
 
 @app.post("/view_quotation", response_class=HTMLResponse)
@@ -4801,6 +5051,48 @@ async def chatbot_query(request: Request, data: ChatbotRequest):
     active_store = get_active_store(request)
     response_text = query_chatbot(data.message, [h.dict() for h in data.history], store_name=active_store)
     return {"response": response_text}
+
+@app.get("/api/db_status")
+def db_status(request: Request):
+    """Diagnostic endpoint to inspect active database engine and counts."""
+    from database import DATABASE_URL, engine as _eng
+    masked = DATABASE_URL
+    if "@" in masked:
+        parts = masked.split("@")
+        cred_parts = parts[0].split(":")
+        if len(cred_parts) > 2:
+            masked = f"{cred_parts[0]}:{cred_parts[1]}:****@{parts[1]}"
+            
+    db = SessionLocal()
+    try:
+        inv_count = db.execute(text("SELECT COUNT(*) FROM invoices")).scalar() or 0
+        q_count = db.execute(text("SELECT COUNT(*) FROM quotations")).scalar() or 0
+        p_count = db.execute(text("SELECT COUNT(*) FROM products")).scalar() or 0
+        oi_count = db.execute(text("SELECT COUNT(*) FROM order_items")).scalar() or 0
+        v_count = db.execute(text("SELECT COUNT(*) FROM vendors")).scalar() or 0
+        return {
+            "status": "ok",
+            "is_postgres": "postgresql" in str(_eng.url),
+            "database_url": masked,
+            "counts": {
+                "invoices": inv_count,
+                "quotations": q_count,
+                "products": p_count,
+                "order_items": oi_count,
+                "vendors": v_count
+            }
+        }
+    finally:
+        db.close()
+
+@app.post("/api/restore_history")
+def api_restore_history(request: Request):
+    """Manually trigger history restore if needed."""
+    db = SessionLocal()
+    try:
+        return restore_history_from_seed(db, force=True)
+    finally:
+        db.close()
 
 import os
 

@@ -1,0 +1,296 @@
+{
+  "invoices": [
+    {
+      "id": 1,
+      "invoice_no": "2026-06-001",
+      "customer_name": "Thakur Infraprojects Private Limited",
+      "date": "2026-06-16 15:50:16.268961",
+      "total_amount": 8808.0,
+      "gst_amount": 1585.44,
+      "grand_total": 10393.44,
+      "customer_address": null,
+      "customer_gstin": null,
+      "customer_mobile": null,
+      "customer_email": null,
+      "store": "mahindra"
+    },
+    {
+      "id": 2,
+      "invoice_no": "2026-06-002",
+      "customer_name": "Test Customer Pvt Ltd",
+      "date": "2026-06-18 10:23:13.692594",
+      "total_amount": 69.0,
+      "gst_amount": 12.42,
+      "grand_total": 81.42,
+      "customer_address": null,
+      "customer_gstin": null,
+      "customer_mobile": null,
+      "customer_email": null,
+      "store": "mahindra"
+    },
+    {
+      "id": 3,
+      "invoice_no": "2026-06-003",
+      "customer_name": "Walk-In Customer",
+      "date": "2026-06-18 11:57:30.324602",
+      "total_amount": 324.0,
+      "gst_amount": 58.32,
+      "grand_total": 382.32,
+      "customer_address": null,
+      "customer_gstin": null,
+      "customer_mobile": null,
+      "customer_email": null,
+      "store": "mahindra"
+    }
+  ],
+  "invoice_items": [
+    {
+      "id": 1,
+      "invoice_id": 1,
+      "part_no": "6802EAP00021N",
+      "description": "",
+      "quantity": 2,
+      "rate": 1711.0,
+      "amount": 3422.0,
+      "hsn": "87089900",
+      "purchase_rate": 0.0
+    },
+    {
+      "id": 2,
+      "invoice_id": 1,
+      "part_no": "6701AAJ00032N",
+      "description": "",
+      "quantity": 1,
+      "rate": 5386.0,
+      "amount": 5386.0,
+      "hsn": "87089900",
+      "purchase_rate": 0.0
+    },
+    {
+      "id": 3,
+      "invoice_id": 2,
+      "part_no": "7601AAP00131N",
+      "description": "OIL SEAL KINGPIN",
+      "quantity": 1,
+      "rate": 69.0,
+      "amount": 69.0,
+      "hsn": "40169330",
+      "purchase_rate": 0.0
+    },
+    {
+      "id": 4,
+      "invoice_id": 3,
+      "part_no": "0311DAV00020N",
+      "description": "GASKET,VALVE COVER AV",
+      "quantity": 6,
+      "rate": 54.0,
+      "amount": 324.0,
+      "hsn": "68129922",
+      "purchase_rate": 0.0
+    }
+  ],
+  "quotations": [
+    {
+      "id": 1,
+      "quotation_no": "QT-2026-06-001",
+      "customer_name": "",
+      "date": "2026-06-18 14:49:46.578781",
+      "total_amount": 23364.0,
+      "grand_total": 27569.52,
+      "customer_address": null,
+      "customer_gstin": null,
+      "customer_mobile": null,
+      "customer_email": null,
+      "store": "mahindra"
+    },
+    {
+      "id": 2,
+      "quotation_no": "QT-2026-06-002",
+      "customer_name": "",
+      "date": "2026-06-18 14:51:32.453570",
+      "total_amount": 23364.0,
+      "grand_total": 27569.52,
+      "customer_address": null,
+      "customer_gstin": null,
+      "customer_mobile": null,
+      "customer_email": null,
+      "store": "mahindra"
+    },
+    {
+      "id": 3,
+      "quotation_no": "QT-2026-08-001",
+      "customer_name": "Updated Cust Q",
+      "date": "2026-08-24 09:08:29.264580",
+      "total_amount": 1620.0,
+      "grand_total": 1911.6,
+      "customer_address": "",
+      "customer_gstin": "",
+      "customer_mobile": "9876543210",
+      "customer_email": "",
+      "store": "mahindra"
+    },
+    {
+      "id": 4,
+      "quotation_no": "QT-2026-08-002",
+      "customer_name": "Updated Cust Q",
+      "date": "2026-08-24 09:14:15.277148",
+      "total_amount": 1620.0,
+      "grand_total": 1911.6,
+      "customer_address": "",
+      "customer_gstin": "",
+      "customer_mobile": "9876543210",
+      "customer_email": "",
+      "store": "mahindra"
+    },
+    {
+      "id": 5,
+      "quotation_no": "QT-2026-08-003",
+      "customer_name": "Updated Cust Q",
+      "date": "2026-08-24 09:14:29.016285",
+      "total_amount": 1620.0,
+      "grand_total": 1911.6,
+      "customer_address": "",
+      "customer_gstin": "",
+      "customer_mobile": "9876543210",
+      "customer_email": "",
+      "store": "mahindra"
+    },
+    {
+      "id": 6,
+      "quotation_no": "QT-2026-08-004",
+      "customer_name": "Updated Cust Q",
+      "date": "2026-08-24 09:14:48.532621",
+      "total_amount": 1620.0,
+      "grand_total": 1911.6,
+      "customer_address": "",
+      "customer_gstin": "",
+      "customer_mobile": "9876543210",
+      "customer_email": "",
+      "store": "mahindra"
+    },
+    {
+      "id": 7,
+      "quotation_no": "QT-2026-08-005",
+      "customer_name": "Updated Cust Q",
+      "date": "2026-08-24 09:15:04.204855",
+      "total_amount": 1620.0,
+      "grand_total": 1911.6,
+      "customer_address": "",
+      "customer_gstin": "",
+      "customer_mobile": "9876543210",
+      "customer_email": "",
+      "store": "mahindra"
+    }
+  ],
+  "quotation_items": [
+    {
+      "id": 1,
+      "quotation_id": 1,
+      "part_no": "7906HAP00051N",
+      "description": "STARTER MOTOR 4.5KILO WATT  24V",
+      "rate": 11682.0,
+      "qty": 2,
+      "discount": 0.0,
+      "amount": 23364.0,
+      "hsn": "85114000"
+    },
+    {
+      "id": 2,
+      "quotation_id": 2,
+      "part_no": "7906HAP00051N",
+      "description": "STARTER MOTOR 4.5KILO WATT  24V",
+      "rate": 11682.0,
+      "qty": 2,
+      "discount": 0.0,
+      "amount": 23364.0,
+      "hsn": "85114000"
+    },
+    {
+      "id": 3,
+      "quotation_id": 3,
+      "part_no": "TEST-PRIORITY-01",
+      "description": "Item Q Updated",
+      "rate": 600.0,
+      "qty": 3,
+      "discount": 10.0,
+      "amount": 1620.0,
+      "hsn": "8511"
+    },
+    {
+      "id": 4,
+      "quotation_id": 4,
+      "part_no": "TEST-PRIORITY-01",
+      "description": "Item Q Updated",
+      "rate": 600.0,
+      "qty": 3,
+      "discount": 10.0,
+      "amount": 1620.0,
+      "hsn": "8511"
+    },
+    {
+      "id": 5,
+      "quotation_id": 5,
+      "part_no": "TEST-PRIORITY-01",
+      "description": "Item Q Updated",
+      "rate": 600.0,
+      "qty": 3,
+      "discount": 10.0,
+      "amount": 1620.0,
+      "hsn": "8511"
+    },
+    {
+      "id": 6,
+      "quotation_id": 6,
+      "part_no": "TEST-PRIORITY-01",
+      "description": "Item Q Updated",
+      "rate": 600.0,
+      "qty": 3,
+      "discount": 10.0,
+      "amount": 1620.0,
+      "hsn": "8511"
+    },
+    {
+      "id": 7,
+      "quotation_id": 7,
+      "part_no": "TEST-PRIORITY-01",
+      "description": "Item Q Updated",
+      "rate": 600.0,
+      "qty": 3,
+      "discount": 10.0,
+      "amount": 1620.0,
+      "hsn": "8511"
+    },
+    {
+      "id": 8,
+      "quotation_id": 8,
+      "part_no": "TEST-PRIORITY-01",
+      "description": "Item Q Updated",
+      "rate": 600.0,
+      "qty": 3,
+      "discount": 10.0,
+      "amount": 1620.0,
+      "hsn": "8511"
+    }
+  ],
+  "vendors": [
+    {
+      "id": 1,
+      "name": "Test Cust Q",
+      "address": "",
+      "mobile_num": "9876543210",
+      "gstin": "",
+      "email_id": "",
+      "store": "mahindra"
+    },
+    {
+      "id": 2,
+      "name": "Test Invoice Cust",
+      "address": "",
+      "mobile_num": "",
+      "gstin": "",
+      "email_id": "",
+      "store": "mahindra"
+    }
+  ],
+  "purchases": []
+}
