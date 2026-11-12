@@ -1,4 +1,5 @@
-from fastapi import FastAPI, Form, Request, UploadFile, File, Depends, Query
+# Redeploy trigger - updated at 2026-11-12T20:26
+
 from starlette.middleware.sessions import SessionMiddleware
 from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 from sqlalchemy import create_engine, Column, Integer, String, Float, DateTime, case
@@ -2595,7 +2596,7 @@ def list_quotations(request: Request):
     try:
         active_store = get_active_store(request).lower()
         db = SessionLocal()
-        store_condition = "1=1"
+        store_condition = "(LOWER(store) = :store OR store IS NULL OR store = '')" if active_store == "mahindra" else "LOWER(store) = :store"
         rows = db.execute(text(f"""
             SELECT id, quotation_no, customer_name, customer_address, customer_gstin, customer_mobile, customer_email, date, grand_total
             FROM quotations WHERE {store_condition} ORDER BY date DESC NULLS LAST, id DESC LIMIT 50
@@ -2706,7 +2707,7 @@ def list_invoices(request: Request, q: str = ""):
     active_store = get_active_store(request).lower()
     db = SessionLocal()
     q_str = q.strip()
-    store_condition = "1=1"
+    store_condition = "(LOWER(store) = :store OR store IS NULL OR store = '')" if active_store == "mahindra" else "LOWER(store) = :store"
 
     if q_str:
         sql = f"""
@@ -3944,7 +3945,7 @@ async def save_purchase_order(request: Request):
 def list_purchase_orders(request: Request):
     active_store = get_active_store(request).lower()
     db = SessionLocal()
-    store_condition = "1=1"
+    store_condition = "(LOWER(store) = :store OR store IS NULL OR store = '')" if active_store == "mahindra" else "LOWER(store) = :store"
     rows = db.execute(text(f"""
         SELECT id, po_no, vendor_name, vendor_address, vendor_gstin, vendor_mobile, vendor_email, date, grand_total
         FROM purchase_orders WHERE {store_condition} ORDER BY date DESC NULLS LAST, id DESC LIMIT 50
@@ -4788,7 +4789,7 @@ def purchase_summary(
 ):
     active_store = get_active_store(request).lower()
     db = SessionLocal()
-    store_condition = "1=1"
+    store_condition = "(LOWER(store) = :store OR store IS NULL OR store = '')" if active_store == "mahindra" else "LOWER(store) = :store"
     
     summary_query = f"""
         SELECT 
@@ -4851,7 +4852,7 @@ def export_purchase_excel(
 ):
     active_store = get_active_store(request).lower()
     db = SessionLocal()
-    store_condition = "1=1"
+    store_condition = "(LOWER(store) = :store OR store IS NULL OR store = '')" if active_store == "mahindra" else "LOWER(store) = :store"
     
     items_query = f"""
         SELECT 
