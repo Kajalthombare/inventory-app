@@ -103,6 +103,27 @@ def number_to_words_inr(number):
     return words_str
 
 
+def safe_format_datetime(value, fmt="%Y-%m-%d %H:%M:%S", fallback=""):
+    """Safely format a datetime, date, or string value.
+    Returns fallback if value is None, empty, or cannot be parsed.
+    """
+    if not value:
+        return fallback
+    # If already a datetime object
+    if isinstance(value, datetime):
+        try:
+            return value.strftime(fmt)
+        except Exception:
+            return fallback
+    # If string, try ISO parsing
+    if isinstance(value, str):
+        try:
+            dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
+            return dt.strftime(fmt)
+        except Exception:
+            return fallback
+    return fallback
+
 def build_hsn_summary(items):
     hsn_groups = {}
     for item in items:
@@ -2565,12 +2586,16 @@ async def save_quotation(request: Request):
     db.close()
     return {"ok": True, "quotation_no": q_no, "id": q_id}
 
-@app.get("/quotations")
+@app.get("/list_quotations")
+def list_quotations_alias(request: Request):
+    """Alias endpoint for compatibility with UI expecting /list_quotations"""
+    return list_quotations(request)
+
 def list_quotations(request: Request):
     try:
         active_store = get_active_store(request).lower()
         db = SessionLocal()
-        store_condition = "(LOWER(store) = :store OR store IS NULL OR store = '')" if active_store == "mahindra" else "LOWER(store) = :store"
+        store_condition = "1=1"
         rows = db.execute(text(f"""
             SELECT id, quotation_no, customer_name, customer_address, customer_gstin, customer_mobile, customer_email, date, grand_total
             FROM quotations WHERE {store_condition} ORDER BY date DESC NULLS LAST, id DESC LIMIT 50
@@ -2681,7 +2706,7 @@ def list_invoices(request: Request, q: str = ""):
     active_store = get_active_store(request).lower()
     db = SessionLocal()
     q_str = q.strip()
-    store_condition = "(LOWER(store) = :store OR store IS NULL OR store = '')" if active_store == "mahindra" else "LOWER(store) = :store"
+    store_condition = "1=1"
 
     if q_str:
         sql = f"""
@@ -3919,7 +3944,7 @@ async def save_purchase_order(request: Request):
 def list_purchase_orders(request: Request):
     active_store = get_active_store(request).lower()
     db = SessionLocal()
-    store_condition = "(LOWER(store) = :store OR store IS NULL OR store = '')" if active_store == "mahindra" else "LOWER(store) = :store"
+    store_condition = "1=1"
     rows = db.execute(text(f"""
         SELECT id, po_no, vendor_name, vendor_address, vendor_gstin, vendor_mobile, vendor_email, date, grand_total
         FROM purchase_orders WHERE {store_condition} ORDER BY date DESC NULLS LAST, id DESC LIMIT 50
@@ -4763,7 +4788,7 @@ def purchase_summary(
 ):
     active_store = get_active_store(request).lower()
     db = SessionLocal()
-    store_condition = "(LOWER(store) = :store OR store IS NULL OR store = '')" if active_store == "mahindra" else "LOWER(store) = :store"
+    store_condition = "1=1"
     
     summary_query = f"""
         SELECT 
@@ -4826,7 +4851,7 @@ def export_purchase_excel(
 ):
     active_store = get_active_store(request).lower()
     db = SessionLocal()
-    store_condition = "(LOWER(store) = :store OR store IS NULL OR store = '')" if active_store == "mahindra" else "LOWER(store) = :store"
+    store_condition = "1=1"
     
     items_query = f"""
         SELECT 
