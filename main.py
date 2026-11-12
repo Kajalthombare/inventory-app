@@ -1,7 +1,7 @@
 # Redeploy trigger - updated at 2026-11-12T20:26
 
 from starlette.middleware.sessions import SessionMiddleware
-from fastapi import FastAPI, Request, Form, Query
+from fastapi import FastAPI, Request, Form, Query, File, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 from sqlalchemy import create_engine, Column, Integer, String, Float, DateTime, case
 from sqlalchemy.orm import sessionmaker, declarative_base
@@ -30,7 +30,7 @@ from email.mime.multipart import MIMEMultipart
 
 # ---------------- PROCESS ORDER ----------------
 
-from fastapi import FastAPI, Request, Form, Query
+from fastapi import FastAPI, Request, Form, Query, File, UploadFile
 
 app = FastAPI()
 
