@@ -2567,22 +2567,28 @@ async def save_quotation(request: Request):
 
 @app.get("/quotations")
 def list_quotations(request: Request):
-    active_store = get_active_store(request).lower()
-    db = SessionLocal()
-    store_condition = "(LOWER(store) = :store OR store IS NULL OR store = '')" if active_store == "mahindra" else "LOWER(store) = :store"
-    rows = db.execute(text(f"""
-        SELECT id, quotation_no, customer_name, customer_address, customer_gstin, customer_mobile, customer_email, date, grand_total
-        FROM quotations WHERE {store_condition} ORDER BY date DESC NULLS LAST, id DESC LIMIT 50
-    """), {"store": active_store}).fetchall()
-    db.close()
-    return [{"id": r.id, "quotation_no": r.quotation_no or "",
-             "customer_name": r.customer_name or "",
-             "customer_address": r.customer_address or "",
-             "customer_gstin": r.customer_gstin or "",
-             "customer_mobile": r.customer_mobile or "",
-             "customer_email": r.customer_email or "",
-             "date": safe_format_datetime(r.date)[:10],
-             "grand_total": float(r.grand_total or 0)} for r in rows]
+    try:
+        active_store = get_active_store(request).lower()
+        db = SessionLocal()
+        store_condition = "(LOWER(store) = :store OR store IS NULL OR store = '')" if active_store == "mahindra" else "LOWER(store) = :store"
+        rows = db.execute(text(f"""
+            SELECT id, quotation_no, customer_name, customer_address, customer_gstin, customer_mobile, customer_email, date, grand_total
+            FROM quotations WHERE {store_condition} ORDER BY date DESC NULLS LAST, id DESC LIMIT 50
+        """), {"store": active_store}).fetchall()
+        db.close()
+        return [{"id": r.id, "quotation_no": r.quotation_no or "",
+                 "customer_name": r.customer_name or "",
+                 "customer_address": r.customer_address or "",
+                 "customer_gstin": r.customer_gstin or "",
+                 "customer_mobile": r.customer_mobile or "",
+                 "customer_email": r.customer_email or "",
+                 "date": safe_format_datetime(r.date)[:10] if hasattr(r, 'date') else "",
+                 "grand_total": float(r.grand_total or 0)} for r in rows]
+    except Exception as e:
+        # Log the error for debugging (Railway captures stdout)
+        print(f"⚠ Error in list_quotations: {e}")
+        return []
+
 
 @app.get("/quotation_details/{q_id}")
 def quotation_details(q_id: int, request: Request):

@@ -41,7 +41,7 @@
       "customer_mobile": null,
       "customer_email": null,
       "store": "mahindra"
-    }
+    },
   ],
   "invoice_items": [
     {
@@ -180,7 +180,7 @@
       "customer_mobile": "9876543210",
       "customer_email": "",
       "store": "mahindra"
-    }
+    },
   ],
   "quotation_items": [
     {
@@ -290,7 +290,7 @@
       "gstin": "",
       "email_id": "",
       "store": "mahindra"
-    }
+    },
   ],
   "purchases": []
 }
