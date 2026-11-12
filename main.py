@@ -734,9 +734,16 @@ def render(name: str, status_code: int = 200, **ctx) -> HTMLResponse:
     return HTMLResponse(content=html, status_code=status_code)
 from database import Base, engine, SessionLocal
 
-# Detect DB type once at startup
 
-# ── One‑time store‑normalization endpoint �n@app.get("/api/fix_store", response_model=dict)
+@app.get("/api/trigger_fix")
+def trigger_fix():
+    """Convenient wrapper to run the store‑normalisation logic via a simple endpoint.
+    Calls the existing ``fix_store`` function and returns its JSON result.
+    """
+    return fix_store()
+
+
+# ── One‑time store‑normalization endpointn@app.get("/api/fix_store", response_model=dict)
 def fix_store():
     """Set missing or empty store values to the default 'mahindra'.
     This ensures that invoices/quotations created before the store column
@@ -758,7 +765,14 @@ def fix_store():
     finally:
         db.close()
 
-# Detect DB type once at startup
+
+@app.get("/api/trigger_fix")
+def trigger_fix():
+    """Convenient wrapper to run the store‑normalisation logic via a simple endpoint.
+    Calls the existing ``fix_store`` function and returns its JSON result.
+    """
+    return fix_store()
+
 _db_url_str = str(engine.url)
 _db_is_mysql = "mysql" in _db_url_str
 _db_is_postgres = "postgresql" in _db_url_str
