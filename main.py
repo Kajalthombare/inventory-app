@@ -743,7 +743,8 @@ def trigger_fix():
     return fix_store()
 
 
-# ── One‑time store‑normalization endpointn@app.get("/api/fix_store", response_model=dict)
+# ── One‑time store‑normalization endpoint
+@app.get("/api/fix_store", response_model=dict)
 def fix_store():
     """Set missing or empty store values to the default 'mahindra'.
     This ensures that invoices/quotations created before the store column
