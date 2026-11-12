@@ -735,6 +735,30 @@ def render(name: str, status_code: int = 200, **ctx) -> HTMLResponse:
 from database import Base, engine, SessionLocal
 
 # Detect DB type once at startup
+
+# ── One‑time store‑normalization endpoint �n@app.get("/api/fix_store", response_model=dict)
+def fix_store():
+    """Set missing or empty store values to the default 'mahindra'.
+    This ensures that invoices/quotations created before the store column
+    existed are visible when the user selects the Mahindra store.
+    """
+    db = SessionLocal()
+    try:
+        # Invoices
+        db.execute(text("UPDATE invoices SET store = 'mahindra' WHERE store IS NULL OR store = '' OR LOWER(store) = 'mahindra'"))
+        # Quotations
+        db.execute(text("UPDATE quotations SET store = 'mahindra' WHERE store IS NULL OR store = '' OR LOWER(store) = 'mahindra'"))
+        # Products (optional, for consistency)
+        db.execute(text("UPDATE products SET store = 'mahindra' WHERE store IS NULL OR store = '' OR LOWER(store) = 'mahindra'"))
+        db.commit()
+        return {"status": "ok", "message": "Store values normalized to 'mahindra' where missing."}
+    except Exception as e:
+        db.rollback()
+        return {"status": "error", "message": str(e)}
+    finally:
+        db.close()
+
+# Detect DB type once at startup
 _db_url_str = str(engine.url)
 _db_is_mysql = "mysql" in _db_url_str
 _db_is_postgres = "postgresql" in _db_url_str
