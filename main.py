@@ -255,12 +255,15 @@ def restore_history_from_seed(db, force=False):
         # 2. Restore Invoices & Invoice Items
         invoices = data.get("invoices", [])
         inv_items = data.get("invoice_items", [])
+        old_to_new_inv_id = {}  # map old seed id -> new auto-generated id
         for inv in invoices:
             inv_no = (inv.get("invoice_no") or "").strip()
             if not inv_no:
                 continue
             exists = db.execute(text("SELECT id FROM invoices WHERE invoice_no = :inv"), {"inv": inv_no}).fetchone()
-            if not exists:
+            if exists:
+                old_to_new_inv_id[inv.get("id")] = exists[0]
+            else:
                 inv_dt = inv.get("date")
                 if isinstance(inv_dt, str):
                     try:
@@ -270,11 +273,10 @@ def restore_history_from_seed(db, force=False):
                 elif not inv_dt:
                     inv_dt = datetime.now()
 
-                db.execute(text("""
-                    INSERT INTO invoices (id, invoice_no, customer_name, customer_address, customer_gstin, customer_mobile, customer_email, date, total_amount, gst_amount, grand_total, store)
-                    VALUES (:id, :inv, :cust, :addr, :gst, :mob, :email, :dt, :tot, :gst_amt, :grand, :store)
+                result = db.execute(text("""
+                    INSERT INTO invoices (invoice_no, customer_name, customer_address, customer_gstin, customer_mobile, customer_email, date, total_amount, gst_amount, grand_total, store)
+                    VALUES (:inv, :cust, :addr, :gst, :mob, :email, :dt, :tot, :gst_amt, :grand, :store)
                 """), {
-                    "id": inv.get("id"),
                     "inv": inv_no,
                     "cust": inv.get("customer_name") or "",
                     "addr": inv.get("customer_address") or "",
@@ -287,20 +289,25 @@ def restore_history_from_seed(db, force=False):
                     "grand": float(inv.get("grand_total") or 0.0),
                     "store": (inv.get("store") or "mahindra").lower()
                 })
+                # Get the newly inserted id
+                new_id = result.lastrowid
+                if not new_id:
+                    row = db.execute(text("SELECT id FROM invoices WHERE invoice_no = :inv"), {"inv": inv_no}).fetchone()
+                    new_id = row[0] if row else inv.get("id")
+                old_to_new_inv_id[inv.get("id")] = new_id
 
         for it in inv_items:
-            iid = it.get("invoice_id")
-            it_id = it.get("id")
+            old_iid = it.get("invoice_id")
+            new_iid = old_to_new_inv_id.get(old_iid, old_iid)
             exists = db.execute(text("SELECT id FROM invoice_items WHERE invoice_id = :iid AND part_no = :pn"), {
-                "iid": iid, "pn": it.get("part_no")
+                "iid": new_iid, "pn": it.get("part_no")
             }).fetchone()
             if not exists:
                 db.execute(text("""
-                    INSERT INTO invoice_items (id, invoice_id, part_no, description, quantity, rate, amount, hsn, purchase_rate, brand)
-                    VALUES (:id, :iid, :pn, :desc, :qty, :rate, :amt, :hsn, :prate, :brand)
+                    INSERT INTO invoice_items (invoice_id, part_no, description, quantity, rate, amount, hsn, purchase_rate, brand)
+                    VALUES (:iid, :pn, :desc, :qty, :rate, :amt, :hsn, :prate, :brand)
                 """), {
-                    "id": it_id,
-                    "iid": iid,
+                    "iid": new_iid,
                     "pn": it.get("part_no") or "",
                     "desc": it.get("description") or "",
                     "qty": int(it.get("quantity") or 1),
@@ -314,12 +321,15 @@ def restore_history_from_seed(db, force=False):
         # 3. Restore Quotations & Quotation Items
         quotations = data.get("quotations", [])
         q_items = data.get("quotation_items", [])
+        old_to_new_q_id = {}  # map old seed id -> new auto-generated id
         for q in quotations:
             q_no = (q.get("quotation_no") or "").strip()
             if not q_no:
                 continue
             exists = db.execute(text("SELECT id FROM quotations WHERE quotation_no = :qno"), {"qno": q_no}).fetchone()
-            if not exists:
+            if exists:
+                old_to_new_q_id[q.get("id")] = exists[0]
+            else:
                 q_dt = q.get("date")
                 if isinstance(q_dt, str):
                     try:
@@ -329,11 +339,10 @@ def restore_history_from_seed(db, force=False):
                 elif not q_dt:
                     q_dt = datetime.now()
 
-                db.execute(text("""
-                    INSERT INTO quotations (id, quotation_no, customer_name, customer_address, customer_gstin, customer_mobile, customer_email, date, total_amount, grand_total, store)
-                    VALUES (:id, :qno, :cust, :addr, :gst, :mob, :email, :dt, :tot, :grand, :store)
+                result = db.execute(text("""
+                    INSERT INTO quotations (quotation_no, customer_name, customer_address, customer_gstin, customer_mobile, customer_email, date, total_amount, grand_total, store)
+                    VALUES (:qno, :cust, :addr, :gst, :mob, :email, :dt, :tot, :grand, :store)
                 """), {
-                    "id": q.get("id"),
                     "qno": q_no,
                     "cust": q.get("customer_name") or "",
                     "addr": q.get("customer_address") or "",
@@ -345,20 +354,24 @@ def restore_history_from_seed(db, force=False):
                     "grand": float(q.get("grand_total") or 0.0),
                     "store": (q.get("store") or "mahindra").lower()
                 })
+                new_id = result.lastrowid
+                if not new_id:
+                    row = db.execute(text("SELECT id FROM quotations WHERE quotation_no = :qno"), {"qno": q_no}).fetchone()
+                    new_id = row[0] if row else q.get("id")
+                old_to_new_q_id[q.get("id")] = new_id
 
         for qit in q_items:
-            qid = qit.get("quotation_id")
-            qit_id = qit.get("id")
+            old_qid = qit.get("quotation_id")
+            new_qid = old_to_new_q_id.get(old_qid, old_qid)
             exists = db.execute(text("SELECT id FROM quotation_items WHERE quotation_id = :qid AND part_no = :pn"), {
-                "qid": qid, "pn": qit.get("part_no")
+                "qid": new_qid, "pn": qit.get("part_no")
             }).fetchone()
             if not exists:
                 db.execute(text("""
-                    INSERT INTO quotation_items (id, quotation_id, part_no, description, rate, qty, discount, amount, hsn, brand)
-                    VALUES (:id, :qid, :pn, :desc, :rate, :qty, :disc, :amt, :hsn, :brand)
+                    INSERT INTO quotation_items (quotation_id, part_no, description, rate, qty, discount, amount, hsn, brand)
+                    VALUES (:qid, :pn, :desc, :rate, :qty, :disc, :amt, :hsn, :brand)
                 """), {
-                    "id": qit_id,
-                    "qid": qid,
+                    "qid": new_qid,
                     "pn": qit.get("part_no") or "",
                     "desc": qit.get("description") or "",
                     "rate": float(qit.get("rate") or 0.0),
@@ -371,9 +384,8 @@ def restore_history_from_seed(db, force=False):
 
         db.commit()
 
-        # 4. Synchronize PostgreSQL autoincrement sequences (if running on PostgreSQL)
-        from database import engine as _eng
-        if "postgresql" in str(_eng.url):
+        # 4. Synchronize autoincrement sequences (PostgreSQL only, MySQL/SQLite auto-handle)
+        if _db_is_postgres:
             for tbl in ["invoices", "invoice_items", "quotations", "quotation_items", "vendors", "purchases"]:
                 try:
                     db.execute(text(f"""
@@ -721,6 +733,14 @@ def render(name: str, status_code: int = 200, **ctx) -> HTMLResponse:
     html = _jinja_env.get_template(name).render(**ctx)
     return HTMLResponse(content=html, status_code=status_code)
 from database import Base, engine, SessionLocal
+
+# Detect DB type once at startup
+_db_url_str = str(engine.url)
+_db_is_mysql = "mysql" in _db_url_str
+_db_is_postgres = "postgresql" in _db_url_str
+_db_is_sqlite = "sqlite" in _db_url_str
+# MySQL/SQLite don't support NULLS LAST; use ISNULL(date) trick for MySQL, just omit for SQLite
+_order_date_desc = "ISNULL(date), date DESC" if _db_is_mysql else ("date DESC NULLS LAST" if _db_is_postgres else "date DESC")
 
 Base.metadata.create_all(bind=engine)
 
