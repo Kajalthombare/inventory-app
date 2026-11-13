@@ -3019,6 +3019,18 @@ def get_proforma_quotation(quot_id: int):
             raise HTTPException(status_code=404, detail="Quotation not found")
         return dict(row._mapping)
 
+@app.get("/quotations")
+def list_quotations():
+    """
+    Return all quotations – used by both tax invoices and proforma list.
+    """
+    from database import SessionLocal
+    from sqlalchemy import text
+
+    with SessionLocal() as db:
+        rows = db.execute(text("SELECT * FROM quotations ORDER BY id DESC")).fetchall()
+        return [dict(row._mapping) for row in rows]
+
 # Helper function to generate beautifully formatted single document Excel
 def generate_single_doc_excel(
     title, doc_no_label, doc_no, date_val,
