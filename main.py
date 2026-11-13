@@ -2988,6 +2988,37 @@ async def download_quotation_pdf(request: Request):
     return HTMLResponse(content=html)
 
 
+# -------------------------------------------------------------
+# Existing /quotations route (used for tax invoices) stays unchanged
+# -------------------------------------------------------------
+
+@app.get("/quotation_details")
+def list_proforma_quotations():
+    """Return all saved proforma quotations for the “Saved Proforma Invoice” tab."""
+    from database import SessionLocal
+    from sqlalchemy import text
+
+    with SessionLocal() as db:
+        rows = db.execute(text(
+            "SELECT * FROM quotations ORDER BY id DESC"
+        )).fetchall()
+        # Convert Row objects to plain dicts
+        result = [dict(row._mapping) for row in rows]
+        return result
+
+@app.get("/quotation_details/{quot_id}")
+def get_proforma_quotation(quot_id: int):
+    """Return a single quotation by ID (used when a user clicks a saved proforma)."""
+    from database import SessionLocal
+    from sqlalchemy import text
+    from fastapi import HTTPException
+
+    with SessionLocal() as db:
+        row = db.execute(text("SELECT * FROM quotations WHERE id = :i"), {"i": quot_id}).first()
+        if not row:
+            raise HTTPException(status_code=404, detail="Quotation not found")
+        return dict(row._mapping)
+
 # Helper function to generate beautifully formatted single document Excel
 def generate_single_doc_excel(
     title, doc_no_label, doc_no, date_val,
