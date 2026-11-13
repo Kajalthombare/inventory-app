@@ -36,12 +36,12 @@ if not DATABASE_URL and os.environ.get("PGHOST") and os.environ.get("PGDATABASE"
     else:
         DATABASE_URL = f"postgresql://{user}@{host}:{port}/{dbname}"
 
-# Fallback to SQLite (prefer persistent /data volume if mounted)
+# Enforce presence of DATABASE_URL – no silent SQLite fallback
 if not DATABASE_URL:
-    if os.path.exists("/data") and os.path.isdir("/data"):
-        DATABASE_URL = "sqlite:////data/inventory.db"
-    else:
-        DATABASE_URL = "sqlite:///inventory.db"
+    raise RuntimeError(
+        "❗ DATABASE_URL not set – the app must connect to PostgreSQL. "
+        "Check Railway > Settings > Variables."
+    )
 
 # Dynamic driver selection for PostgreSQL
 if DATABASE_URL.startswith("postgres://") or (DATABASE_URL.startswith("postgresql://") and not DATABASE_URL.startswith("postgresql+")):
